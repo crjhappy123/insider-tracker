@@ -1,15 +1,6 @@
 // Shared D1 query + HTML rendering for the insider tracker.
 // Files prefixed with "_" are not routed by Cloudflare Pages.
 
-const CODE_LABELS = {
-  P: "P · Purchase",
-  S: "S · Sale",
-  A: "A · Grant/Award",
-  M: "M · Option Exercise",
-  F: "F · Tax Withholding",
-  G: "G · Gift",
-};
-
 // Parse filter params from the request URL, coercing blanks to null.
 export function parseFilters(url) {
   const g = (k) => {
@@ -33,7 +24,6 @@ export function parseFilters(url) {
     code: g("code"),
     minValue,
     minMarketCap,
-    showSells: g("show_sells") !== null, // checkbox: absent = buys only (default)
     limit,
   };
 }
@@ -63,9 +53,7 @@ export async function queryTransactions(db, f) {
     where.push("COALESCE(c.market_cap, t.market_cap) >= ?");
     binds.push(f.minMarketCap);
   }
-  if (!f.showSells) {
-    where.push("t.transaction_code = 'P'"); // open-market purchases only by default
-  }
+  // The DB only holds open-market purchases (see scraper INGEST_CODES).
   // Prefer the weekly company-level market cap; fall back to the per-row estimate.
   // Also attach the AI score/comment when present.
   let sql =
@@ -171,30 +159,20 @@ function money(v) {
   return `${sign}$${abs.toFixed(0)}`;
 }
 
-// Roll up the shown rows into headline stats.
+// Roll up the shown rows into headline stats. Every row is an open-market buy.
 function computeStats(rows) {
   let buyValue = 0,
-    sellValue = 0,
-    buys = 0,
-    sells = 0;
+    maxBuy = 0,
+    maxTicker = "";
   for (const r of rows) {
     const v = Number(r.value) || 0;
-    if (r.acquired_disposed === "A") {
-      buyValue += v;
-      buys++;
-    } else if (r.acquired_disposed === "D") {
-      sellValue += v;
-      sells++;
+    buyValue += v;
+    if (v > maxBuy) {
+      maxBuy = v;
+      maxTicker = r.ticker || "";
     }
   }
-  return {
-    count: rows.length,
-    buys,
-    sells,
-    buyValue,
-    sellValue,
-    net: buyValue - sellValue,
-  };
+  return { count: rows.length, buyValue, maxBuy, maxTicker };
 }
 
 // AI score pill (color by conviction) + comment on hover.
@@ -218,42 +196,20 @@ function tile(label, value, accentVar, sub) {
 // Render the full HTML page.
 export function renderPage(rows, f, report) {
   const s = computeStats(rows);
-  const flowTotal = s.buyValue + s.sellValue || 1;
-  const buyPct = (s.buyValue / flowTotal) * 100;
-
-  const codeOptions = Object.entries(CODE_LABELS)
-    .map(
-      ([c, lbl]) =>
-        `<option value="${c}" ${f.code === c ? "selected" : ""}>${lbl}</option>`
-    )
-    .join("");
 
   const bodyRows = rows.length
     ? rows
         .map((r) => {
-          let badge, rowClass;
-          if (r.acquired_disposed === "A") {
-            badge = `<span class="badge buy">▲ BUY</span>`;
-            rowClass = "buy";
-          } else if (r.acquired_disposed === "D") {
-            badge = `<span class="badge sell">▼ SELL</span>`;
-            rowClass = "sell";
-          } else {
-            badge = `<span class="badge neutral">${esc(r.transaction_code)}</span>`;
-            rowClass = "";
-          }
-          return `<tr class="${rowClass}">
+          return `<tr class="buy">
             <td class="dim">${esc(r.filing_date)}</td>
             <td class="dim">${esc(r.trade_date || "")}</td>
             <td class="tk">
               <span class="ticker">${esc(r.ticker || "—")}</span>
               <span class="mcap">${bcap(r.eff_mktcap)}</span>
             </td>
-            <td>${badge}</td>
             <td class="co">${esc(r.company_name)}</td>
             <td>${esc(r.insider_name)}</td>
             <td class="dim">${esc(r.insider_title)}</td>
-            <td class="dim">${esc(r.transaction_code)}</td>
             <td>${aiCell(r)}</td>
             <td class="n">${r.price != null ? "$" + Number(r.price).toFixed(2) : ""}</td>
             <td class="n">${num(r.shares)}</td>
@@ -262,7 +218,7 @@ export function renderPage(rows, f, report) {
           </tr>`;
         })
         .join("")
-    : `<tr><td colspan="13" class="empty">No transactions match your filters.</td></tr>`;
+    : `<tr><td colspan="11" class="empty">No transactions match your filters.</td></tr>`;
 
   const pickBlocks = (report && report.picks ? report.picks : [])
     .map((p) => {
@@ -337,15 +293,6 @@ header{display:flex;align-items:baseline;gap:.8rem;flex-wrap:wrap;margin-bottom:
 .tile-label{font-size:.68rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:.35rem}
 .tile-value{font-size:1.7rem;font-weight:700;letter-spacing:-.02em;line-height:1}
 .tile-sub{font-size:.72rem;color:var(--ink2);margin-top:.4rem}
-/* flow bar */
-.flow{padding:1rem 1.15rem;margin-bottom:1.1rem}
-.flow-head{display:flex;justify-content:space-between;font-size:.72rem;color:var(--ink2);margin-bottom:.5rem}
-.flow-bar{height:12px;border-radius:99px;overflow:hidden;display:flex;background:var(--sell)}
-.flow-bar>i{display:block;height:100%;background:var(--buy)}
-.flow-legend{display:flex;gap:1.2rem;margin-top:.55rem;font-size:.74rem;color:var(--ink2)}
-.chip{display:inline-flex;align-items:center;gap:.4rem}
-.chip::before{content:"";width:.6rem;height:.6rem;border-radius:2px}
-.chip.b::before{background:var(--buy)}.chip.s::before{background:var(--sell)}
 /* filters */
 form{display:flex;flex-wrap:wrap;gap:.7rem;align-items:end;padding:1rem 1.15rem;margin-bottom:1.1rem}
 label{display:flex;flex-direction:column;font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);gap:.35rem}
@@ -376,11 +323,6 @@ td.tk{line-height:1.2}
 .mcap{display:block;font-size:.68rem;color:var(--muted);font-variant-numeric:tabular-nums}
 .code{color:var(--muted);font-size:.72rem}
 tbody tr.buy td:first-child{box-shadow:inset 3px 0 0 var(--buy)}
-tbody tr.sell td:first-child{box-shadow:inset 3px 0 0 var(--sell)}
-.badge{display:inline-block;padding:.12rem .45rem;border-radius:6px;font-size:.68rem;font-weight:700;letter-spacing:.04em}
-.badge.buy{color:var(--buy);background:color-mix(in srgb,var(--buy) 16%,transparent)}
-.badge.sell{color:var(--sell);background:color-mix(in srgb,var(--sell) 16%,transparent)}
-.badge.neutral{color:var(--ink2);background:var(--glass)}
 .empty{text-align:center;padding:2.5rem;color:var(--muted)}
 .count{font-size:.78rem;color:var(--muted);margin:.2rem 0 .6rem}
 .report{padding:1.1rem 1.25rem;margin-bottom:1.1rem;border-left:3px solid var(--accent)}
@@ -401,40 +343,33 @@ tbody tr.sell td:first-child{box-shadow:inset 3px 0 0 var(--sell)}
 </style></head><body><div class="wrap">
 <header>
   <div class="logo"><span class="dot"></span>Insider Tracker</div>
-  <span class="tag">SEC Form 4 · insider buys &amp; sells</span>
+  <span class="tag">SEC Form 4 · insider open-market purchases</span>
 </header>
 
 ${reportCard}
 
 <section class="kpi">
-  ${tile("Transactions", num(s.count), "--accent")}
-  ${tile("Buy Volume", money(s.buyValue), "--buy", `${s.buys} purchase${s.buys === 1 ? "" : "s"}`)}
-  ${tile("Sell Volume", money(s.sellValue), "--sell", `${s.sells} sale${s.sells === 1 ? "" : "s"}`)}
-  ${tile("Net Flow", money(s.net), s.net >= 0 ? "--buy" : "--sell", s.net >= 0 ? "net buying" : "net selling")}
+  ${tile("Purchases", num(s.count), "--accent", "open-market buys (code P)")}
+  ${tile("Total Bought", money(s.buyValue), "--buy")}
+  ${tile("Avg Buy Size", money(s.count ? s.buyValue / s.count : 0), "--accent")}
+  ${tile("Largest Buy", money(s.maxBuy), "--buy", s.maxTicker || "")}
 </section>
 
-<section class="card flow">
-  <div class="flow-head"><span>Buy vs Sell $ (shown rows)</span><span>${buyPct.toFixed(0)}% buys</span></div>
-  <div class="flow-bar"><i style="width:${buyPct}%"></i></div>
-  <div class="flow-legend"><span class="chip b">Buys ${money(s.buyValue)}</span><span class="chip s">Sells ${money(s.sellValue)}</span></div>
-</section>
 
 <form class="card" method="get" action="/">
   <label>Ticker<input name="ticker" value="${esc(f.ticker || "")}" placeholder="AAPL" size="8"></label>
   <label>Insider<input name="insider" value="${esc(f.insider || "")}" placeholder="name" size="14"></label>
-  <label>Type<select name="code"><option value="">Any</option>${codeOptions}</select></label>
   <label>Min $ value<input name="min_value" value="${f.minValue ?? ""}" placeholder="100000" size="10"></label>
   <label>Min mkt cap<input name="min_market_cap" value="${f.minMarketCap ?? ""}" placeholder="100000000" size="12"></label>
   <label>Limit<input name="limit" value="${f.limit}" size="5"></label>
-  <label class="check"><input type="checkbox" name="show_sells" value="1" ${f.showSells ? "checked" : ""}> Show all types (sells, grants…)</label>
   <button type="submit">Filter</button>
   <a class="reset" href="/">reset</a>
 </form>
 
 <div class="count">${num(s.count)} transaction(s)</div>
 <div class="card tablecard"><table><thead><tr>
-<th>Filed</th><th>Trade</th><th>Ticker / Mkt Cap</th><th>B/S</th><th>Company</th><th>Insider</th><th>Title</th>
-<th>Code</th><th>AI</th><th class="n">Price</th><th class="n">Qty</th><th class="n">Value</th><th class="n">Owned After</th>
+<th>Filed</th><th>Trade</th><th>Ticker / Mkt Cap</th><th>Company</th><th>Insider</th><th>Title</th>
+<th>AI</th><th class="n">Price</th><th class="n">Qty</th><th class="n">Value</th><th class="n">Owned After</th>
 </tr></thead><tbody>${bodyRows}</tbody></table></div>
 </div></body></html>`;
 }

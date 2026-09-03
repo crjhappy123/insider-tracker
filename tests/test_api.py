@@ -7,24 +7,16 @@ def test_homepage_renders(client, seeded_db):
     assert "AAPL" in resp.text
 
 
-def test_default_is_buys_only(client, seeded_db):
-    """No side param → only the buy (AAPL); the MSFT sale is hidden."""
+def test_returns_seeded_rows(client, seeded_db):
+    """The DB only stores open-market purchases; all seeded rows come back."""
     resp = client.get("/api/transactions")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert len(data) == 1
-    assert data[0]["ticker"] == "AAPL"
-
-
-def test_show_sells_includes_sales(client, seeded_db):
-    resp = client.get("/api/transactions?show_sells=1")
     assert resp.status_code == 200
     assert len(resp.json()) == 2
 
 
 def test_empty_min_value_is_ignored(client, seeded_db):
     """Regression: blank form field ("") must not 422."""
-    resp = client.get("/api/transactions?min_value=&ticker=&insider=&code=&show_sells=1")
+    resp = client.get("/api/transactions?min_value=&ticker=&insider=&code=")
     assert resp.status_code == 200
     assert len(resp.json()) == 2
 
@@ -44,17 +36,14 @@ def test_min_value_with_commas(client, seeded_db):
 
 
 def test_ticker_filter_case_insensitive(client, seeded_db):
-    # MSFT is a sale, so it needs show_sells to appear.
-    resp = client.get("/api/transactions?ticker=msft&show_sells=1")
+    resp = client.get("/api/transactions?ticker=msft")
     assert len(resp.json()) == 1
     assert resp.json()[0]["ticker"] == "MSFT"
 
 
 def test_code_filter(client, seeded_db):
-    assert len(client.get("/api/transactions?code=P").json()) == 1
-    # S is a sale; hidden by default, shown with show_sells.
+    assert len(client.get("/api/transactions?code=P").json()) == 2
     assert len(client.get("/api/transactions?code=S").json()) == 0
-    assert len(client.get("/api/transactions?code=S&show_sells=1").json()) == 1
 
 
 def test_min_market_cap_filter(client, seeded_db):
@@ -76,7 +65,7 @@ def test_company_table_overrides_row_market_cap(client, seeded_db):
         s.merge(Company(cik="320193", ticker="AAPL", market_cap=4_000_000_000_000))
         s.commit()
 
-    data = client.get("/api/transactions").json()  # buys only → AAPL
+    data = client.get("/api/transactions?ticker=AAPL").json()
     assert len(data) == 1
     assert data[0]["market_cap"] == 4_000_000_000_000  # company value, not row's 3T
 

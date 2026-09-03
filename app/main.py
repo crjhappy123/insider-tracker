@@ -15,17 +15,6 @@ templates = Jinja2Templates(
     directory=os.path.join(os.path.dirname(__file__), "templates")
 )
 
-# Common OpenInsider-style transaction codes.
-CODE_LABELS = {
-    "P": "P - Purchase",
-    "S": "S - Sale",
-    "A": "A - Grant/Award",
-    "M": "M - Option Exercise",
-    "F": "F - Tax Withholding",
-    "G": "G - Gift",
-}
-
-
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
@@ -65,25 +54,22 @@ def _bcap(v) -> str:
 
 
 def _compute_stats(rows) -> dict:
-    buy_value = sell_value = 0.0
-    buys = sells = 0
+    """Headline stats. Every stored row is an open-market purchase (code P)."""
+    buy_value = 0.0
+    max_buy = 0.0
+    max_ticker = ""
     for r in rows:
         v = r.value or 0
-        if r.acquired_disposed == "A":
-            buy_value += v
-            buys += 1
-        elif r.acquired_disposed == "D":
-            sell_value += v
-            sells += 1
-    total = buy_value + sell_value or 1
+        buy_value += v
+        if v > max_buy:
+            max_buy = v
+            max_ticker = r.ticker or ""
     return {
         "count": len(rows),
-        "buys": buys,
-        "sells": sells,
         "buy_value": buy_value,
-        "sell_value": sell_value,
-        "net": buy_value - sell_value,
-        "buy_pct": buy_value / total * 100,
+        "avg_buy": buy_value / len(rows) if rows else 0,
+        "max_buy": max_buy,
+        "max_ticker": max_ticker,
     }
 
 
@@ -93,7 +79,6 @@ def _query_transactions(
     code: Optional[str],
     min_value: Optional[str],
     min_market_cap: Optional[str],
-    show_sells: bool,
     limit: int,
 ):
     # Effective market cap prefers the weekly company table, else the per-row estimate.
@@ -107,8 +92,6 @@ def _query_transactions(
             & (AiScore.line_no == Transaction.line_no),
         )
     )
-    if not show_sells:
-        stmt = stmt.where(Transaction.transaction_code == "P")  # open-market buys only
     if ticker:
         stmt = stmt.where(Transaction.ticker == ticker.upper())
     if insider:
@@ -143,12 +126,10 @@ def index(
     code: Optional[str] = None,
     min_value: Optional[str] = None,
     min_market_cap: Optional[str] = None,
-    show_sells: Optional[str] = None,
     limit: int = Query(200, le=1000),
 ):
-    show = show_sells is not None
     rows = _query_transactions(
-        ticker, insider, code, min_value, min_market_cap, show, limit
+        ticker, insider, code, min_value, min_market_cap, limit
     )
     stats = _compute_stats(rows)
     with SessionLocal() as session:
@@ -194,10 +175,8 @@ def index(
                 "code": code or "",
                 "min_value": min_value if min_value is not None else "",
                 "min_market_cap": min_market_cap if min_market_cap is not None else "",
-                "show_sells": show,
                 "limit": limit,
             },
-            "code_labels": CODE_LABELS,
         },
     )
 
@@ -209,10 +188,9 @@ def api_transactions(
     code: Optional[str] = None,
     min_value: Optional[str] = None,
     min_market_cap: Optional[str] = None,
-    show_sells: Optional[str] = None,
     limit: int = Query(200, le=1000),
 ):
     rows = _query_transactions(
-        ticker, insider, code, min_value, min_market_cap, show_sells is not None, limit
+        ticker, insider, code, min_value, min_market_cap, limit
     )
     return JSONResponse([r.as_dict() for r in rows])

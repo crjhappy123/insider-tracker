@@ -44,7 +44,7 @@ def seeded_db():
                     trade_date=date(2026, 8, 27), ticker="MSFT",
                     company_name="Microsoft Corp", issuer_cik="789019",
                     insider_name="NADELLA SATYA", insider_title="Dir, CEO",
-                    transaction_code="S", acquired_disposed="D",
+                    transaction_code="P", acquired_disposed="A",
                     shares=100, price=400, value=40_000, shares_owned_after=900,
                     market_cap=50_000_000,  # $50M — below the $100M threshold
                 ),

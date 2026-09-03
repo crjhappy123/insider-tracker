@@ -23,6 +23,13 @@ from scraper.marketcap import estimate_market_cap
 # Skip companies below this estimated market cap. 0 disables the filter.
 MIN_MARKET_CAP = float(os.environ.get("MIN_MARKET_CAP", "100000000"))  # $100M
 
+# Only store real open-market purchases. Set INGEST_CODES="" to store every code.
+INGEST_CODES = {
+    c.strip().upper()
+    for c in os.environ.get("INGEST_CODES", "P").split(",")
+    if c.strip()
+}
+
 
 def _filing_market_cap(cik: str, rows) -> float | None:
     """Estimate a filing's company market cap using its best nonzero price."""
@@ -35,9 +42,10 @@ def _filing_market_cap(cik: str, rows) -> float | None:
 def ingest_day(day: date) -> int:
     """Ingest one day; returns number of transaction rows written.
 
-    Filings whose estimated company market cap is below MIN_MARKET_CAP are
-    skipped. Companies whose market cap can't be estimated (no price / no shares
-    data) are kept, with market_cap = NULL.
+    Only transactions whose code is in INGEST_CODES (default: P, real open-market
+    purchases) are stored. Filings whose estimated company market cap is below
+    MIN_MARKET_CAP are skipped. Companies whose market cap can't be estimated
+    (no price / no shares data) are kept, with market_cap = NULL.
     """
     init_db()
     count = 0
@@ -50,7 +58,14 @@ def ingest_day(day: date) -> int:
             if not rows:
                 continue
 
+            # Estimate market cap from every priced row, then keep only the codes
+            # we store — a sale's price is still a valid price reference.
             mktcap = _filing_market_cap(rows[0].issuer_cik, rows)
+            if INGEST_CODES:
+                rows = [r for r in rows if r.transaction_code in INGEST_CODES]
+            if not rows:
+                continue
+
             # Drop known small caps; keep unknowns (mktcap is None).
             if mktcap is not None and MIN_MARKET_CAP > 0 and mktcap < MIN_MARKET_CAP:
                 continue
