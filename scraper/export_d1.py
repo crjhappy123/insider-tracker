@@ -26,6 +26,18 @@ COMPANY_COLUMNS = [
     "cik", "ticker", "name", "shares_outstanding", "ref_price",
     "market_cap", "updated_at",
 ]
+REPORT_COLUMNS = ["report_date", "summary", "model", "created_at"]
+SCORE_COLUMNS = [
+    "accession_no", "line_no", "score", "rating", "comment", "created_at",
+]
+
+# table -> (columns, insert verb)
+TABLES = {
+    "transactions": (TXN_COLUMNS, "INSERT OR IGNORE"),
+    "companies": (COMPANY_COLUMNS, "INSERT OR REPLACE"),
+    "daily_reports": (REPORT_COLUMNS, "INSERT OR REPLACE"),
+    "ai_scores": (SCORE_COLUMNS, "INSERT OR REPLACE"),
+}
 
 
 def _sql_literal(v) -> str:
@@ -38,7 +50,7 @@ def _sql_literal(v) -> str:
 
 def main(argv: list[str]) -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--table", choices=["transactions", "companies"], default="transactions")
+    ap.add_argument("--table", choices=list(TABLES), default="transactions")
     ap.add_argument("--since", help="transactions only: export filing_date >= this ISO date")
     ap.add_argument("--db", default=DB_PATH.replace("sqlite:///", ""), help="source SQLite file")
     args = ap.parse_args(argv)
@@ -47,18 +59,15 @@ def main(argv: list[str]) -> None:
     out = sys.stdout
     params: tuple = ()
 
-    if args.table == "companies":
-        cols = COMPANY_COLUMNS
-        verb = "INSERT OR REPLACE"  # weekly refresh overwrites
-        q = f"SELECT {', '.join(cols)} FROM companies ORDER BY cik"
-    else:
-        cols = TXN_COLUMNS
-        verb = "INSERT OR IGNORE"
+    cols, verb = TABLES[args.table]
+    if args.table == "transactions":
         q = f"SELECT {', '.join(cols)} FROM transactions"
         if args.since:
             q += " WHERE filing_date >= ?"
             params = (args.since,)
         q += " ORDER BY filing_date, id"
+    else:
+        q = f"SELECT {', '.join(cols)} FROM {args.table}"
 
     col_list = ", ".join(cols)
     # No BEGIN/COMMIT wrapper: D1's `d1 execute --file` rejects explicit SQL

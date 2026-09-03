@@ -41,3 +41,22 @@ CREATE TABLE IF NOT EXISTS companies (
   updated_at         TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS ix_companies_ticker ON companies(ticker);
+
+-- AI-generated daily report (buy opinions), one row per day.
+CREATE TABLE IF NOT EXISTS daily_reports (
+  report_date TEXT PRIMARY KEY,
+  summary     TEXT,
+  model       TEXT,
+  created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- AI score + comment per scored transaction.
+CREATE TABLE IF NOT EXISTS ai_scores (
+  accession_no TEXT,
+  line_no      INTEGER,
+  score        INTEGER,          -- 0-100 conviction
+  rating       TEXT,             -- e.g. Strong / Moderate / Weak
+  comment      TEXT,
+  created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (accession_no, line_no)
+);

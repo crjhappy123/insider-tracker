@@ -80,3 +80,27 @@ class Company(Base):
     ref_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     market_cap: Mapped[Optional[float]] = mapped_column(Float, index=True, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class DailyReport(Base):
+    """AI-generated daily buy-opinion report, one per day."""
+
+    __tablename__ = "daily_reports"
+
+    report_date: Mapped[str] = mapped_column(String(10), primary_key=True)
+    summary: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    model: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AiScore(Base):
+    """AI conviction score + comment for a single transaction."""
+
+    __tablename__ = "ai_scores"
+
+    accession_no: Mapped[str] = mapped_column(String(32), primary_key=True)
+    line_no: Mapped[int] = mapped_column(Integer, primary_key=True)
+    score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    rating: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    comment: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

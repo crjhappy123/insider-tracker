@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 
 from app.db import SessionLocal, init_db
-from app.models import Company, Transaction
+from app.models import AiScore, Company, DailyReport, Transaction
 
 app = FastAPI(title="Insider Tracker")
 templates = Jinja2Templates(
@@ -98,8 +98,14 @@ def _query_transactions(
 ):
     # Effective market cap prefers the weekly company table, else the per-row estimate.
     eff_mktcap = func.coalesce(Company.market_cap, Transaction.market_cap)
-    stmt = select(Transaction, eff_mktcap).outerjoin(
-        Company, Company.cik == Transaction.issuer_cik
+    stmt = (
+        select(Transaction, eff_mktcap, AiScore.score, AiScore.rating, AiScore.comment)
+        .outerjoin(Company, Company.cik == Transaction.issuer_cik)
+        .outerjoin(
+            AiScore,
+            (AiScore.accession_no == Transaction.accession_no)
+            & (AiScore.line_no == Transaction.line_no),
+        )
     )
     if not show_sells:
         stmt = stmt.where(Transaction.acquired_disposed == "A")  # buys only
@@ -120,8 +126,11 @@ def _query_transactions(
     ).limit(limit)
     with SessionLocal() as session:
         rows = []
-        for txn, eff in session.execute(stmt):
+        for txn, eff, score, rating, comment in session.execute(stmt):
             txn.effective_market_cap = eff
+            txn.ai_score = score
+            txn.ai_rating = rating
+            txn.ai_comment = comment
             rows.append(txn)
         return rows
 
@@ -142,12 +151,17 @@ def index(
         ticker, insider, code, min_value, min_market_cap, show, limit
     )
     stats = _compute_stats(rows)
+    with SessionLocal() as session:
+        report = session.scalars(
+            select(DailyReport).order_by(DailyReport.report_date.desc()).limit(1)
+        ).first()
     return templates.TemplateResponse(
         "index.html",
         {
             "request": request,
             "rows": rows,
             "stats": stats,
+            "report": report,
             "money": _money,
             "bcap": _bcap,
             "filters": {
