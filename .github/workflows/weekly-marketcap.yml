@@ -1,0 +1,42 @@
+name: Weekly market cap refresh → D1
+
+on:
+  schedule:
+    # 06:00 UTC every Sunday.
+    - cron: "0 6 * * 0"
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      # Rebuild the companies table from the *remote* D1 transactions. We pull the
+      # current transactions down, compute company market caps, and push the
+      # companies table back up.
+      - name: Pull transactions from D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx --yes wrangler@3 d1 export insider --remote --no-schema --output=dump.sql
+          python -m scraper.load_dump schema.sql dump.sql
+
+      - name: Build companies table
+        env:
+          EDGAR_USER_AGENT: ${{ secrets.EDGAR_USER_AGENT }}
+        run: python -m scraper.build_companies
+
+      - name: Export & push companies to D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          python -m scraper.export_d1 --table companies > companies.sql
+          npx --yes wrangler@3 d1 execute insider --remote --file=companies.sql

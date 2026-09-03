@@ -1,13 +1,12 @@
-"""Export the local SQLite DB into a D1-importable SQL file.
+"""Export a local SQLite table into a D1-importable SQL file.
 
-Produces INSERT OR IGNORE statements (deduped on the accession+line unique key),
-so re-loading is safe. Usage:
+Idempotent: transactions use INSERT OR IGNORE (accession+line unique key);
+companies use INSERT OR REPLACE so weekly refreshes overwrite prior values.
 
-    python -m scraper.export_d1 > data.sql
+    python -m scraper.export_d1 > data.sql                 # transactions (default)
+    python -m scraper.export_d1 --table companies > companies.sql
+    python -m scraper.export_d1 --since 2026-08-01 > data.sql   # limit transactions
     # then: wrangler d1 execute insider --remote --file=data.sql
-
-Optionally limit to recent filings to keep daily loads small:
-    python -m scraper.export_d1 --since 2026-08-01 > data.sql
 """
 from __future__ import annotations
 
@@ -17,11 +16,15 @@ import sys
 
 from app.db import DB_PATH
 
-COLUMNS = [
+TXN_COLUMNS = [
     "accession_no", "line_no", "filing_date", "trade_date", "ticker",
     "company_name", "issuer_cik", "insider_name", "insider_title",
     "transaction_code", "acquired_disposed", "shares", "price", "value",
     "shares_owned_after", "market_cap", "security_title",
+]
+COMPANY_COLUMNS = [
+    "cik", "ticker", "name", "shares_outstanding", "ref_price",
+    "market_cap", "updated_at",
 ]
 
 
@@ -35,32 +38,37 @@ def _sql_literal(v) -> str:
 
 def main(argv: list[str]) -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--since", help="only export filing_date >= this ISO date")
-    ap.add_argument(
-        "--db",
-        default=DB_PATH.replace("sqlite:///", ""),
-        help="path to source SQLite file",
-    )
+    ap.add_argument("--table", choices=["transactions", "companies"], default="transactions")
+    ap.add_argument("--since", help="transactions only: export filing_date >= this ISO date")
+    ap.add_argument("--db", default=DB_PATH.replace("sqlite:///", ""), help="source SQLite file")
     args = ap.parse_args(argv)
 
     conn = sqlite3.connect(args.db)
-    q = f"SELECT {', '.join(COLUMNS)} FROM transactions"
-    params: tuple = ()
-    if args.since:
-        q += " WHERE filing_date >= ?"
-        params = (args.since,)
-    q += " ORDER BY filing_date, id"
-
-    cols = ", ".join(COLUMNS)
     out = sys.stdout
+    params: tuple = ()
+
+    if args.table == "companies":
+        cols = COMPANY_COLUMNS
+        verb = "INSERT OR REPLACE"  # weekly refresh overwrites
+        q = f"SELECT {', '.join(cols)} FROM companies ORDER BY cik"
+    else:
+        cols = TXN_COLUMNS
+        verb = "INSERT OR IGNORE"
+        q = f"SELECT {', '.join(cols)} FROM transactions"
+        if args.since:
+            q += " WHERE filing_date >= ?"
+            params = (args.since,)
+        q += " ORDER BY filing_date, id"
+
+    col_list = ", ".join(cols)
     # No BEGIN/COMMIT wrapper: D1's `d1 execute --file` rejects explicit SQL
     # transactions and batches the statements itself.
     n = 0
     for row in conn.execute(q, params):
         values = ", ".join(_sql_literal(v) for v in row)
-        out.write(f"INSERT OR IGNORE INTO transactions ({cols}) VALUES ({values});\n")
+        out.write(f"{verb} INTO {args.table} ({col_list}) VALUES ({values});\n")
         n += 1
-    print(f"-- exported {n} rows", file=sys.stderr)
+    print(f"-- exported {n} {args.table} rows", file=sys.stderr)
 
 
 if __name__ == "__main__":

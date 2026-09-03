@@ -141,7 +141,7 @@
         <td class="dim">{{ r.trade_date or "" }}</td>
         <td class="tk">
           <span class="ticker">{{ r.ticker or "—" }}</span>
-          <span class="mcap">{{ money(r.market_cap) if r.market_cap is not none else "—" }}</span>
+          <span class="mcap">{{ bcap(r.effective_market_cap if r.effective_market_cap is not none else r.market_cap) }}</span>
         </td>
         <td>
           {% if r.acquired_disposed == 'A' %}<span class="badge buy">▲ BUY</span>

@@ -43,31 +43,35 @@ export async function queryTransactions(db, f) {
   const where = [];
   const binds = [];
   if (f.ticker) {
-    where.push("ticker = ?");
+    where.push("t.ticker = ?");
     binds.push(f.ticker.toUpperCase());
   }
   if (f.insider) {
-    where.push("insider_name LIKE ?");
+    where.push("t.insider_name LIKE ?");
     binds.push(`%${f.insider}%`);
   }
   if (f.code) {
-    where.push("transaction_code = ?");
+    where.push("t.transaction_code = ?");
     binds.push(f.code.toUpperCase());
   }
   if (f.minValue !== null) {
-    where.push("value >= ?");
+    where.push("t.value >= ?");
     binds.push(f.minValue);
   }
   if (f.minMarketCap !== null) {
-    where.push("market_cap >= ?");
+    // Filter on the effective (company-level, else per-row) market cap.
+    where.push("COALESCE(c.market_cap, t.market_cap) >= ?");
     binds.push(f.minMarketCap);
   }
   if (!f.showSells) {
-    where.push("acquired_disposed = 'A'"); // buys only by default
+    where.push("t.acquired_disposed = 'A'"); // buys only by default
   }
-  let sql = "SELECT * FROM transactions";
+  // Prefer the weekly company-level market cap; fall back to the per-row estimate.
+  let sql =
+    "SELECT t.*, COALESCE(c.market_cap, t.market_cap) AS eff_mktcap " +
+    "FROM transactions t LEFT JOIN companies c ON c.cik = t.issuer_cik";
   if (where.length) sql += " WHERE " + where.join(" AND ");
-  sql += " ORDER BY filing_date DESC, id DESC LIMIT ?";
+  sql += " ORDER BY t.filing_date DESC, t.id DESC LIMIT ?";
   binds.push(f.limit);
 
   const { results } = await db
@@ -113,6 +117,12 @@ function num(v, digits = 0) {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   });
+}
+
+// Market cap, always in billions: $45.31B, $0.22B.
+function bcap(v) {
+  if (v === null || v === undefined) return "—";
+  return `$${(Number(v) / 1e9).toFixed(2)}B`;
 }
 
 // Compact currency: $9.9M, $270K, $540.
@@ -193,7 +203,7 @@ export function renderPage(rows, f) {
             <td class="dim">${esc(r.trade_date || "")}</td>
             <td class="tk">
               <span class="ticker">${esc(r.ticker || "—")}</span>
-              <span class="mcap">${r.market_cap != null ? money(r.market_cap) : "—"}</span>
+              <span class="mcap">${bcap(r.eff_mktcap)}</span>
             </td>
             <td>${badge}</td>
             <td class="co">${esc(r.company_name)}</td>

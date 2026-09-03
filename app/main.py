@@ -5,10 +5,10 @@ from typing import Optional
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.db import SessionLocal, init_db
-from app.models import Transaction
+from app.models import Company, Transaction
 
 app = FastAPI(title="Insider Tracker")
 templates = Jinja2Templates(
@@ -57,6 +57,13 @@ def _money(v) -> str:
     return f"{sign}${a:.0f}"
 
 
+def _bcap(v) -> str:
+    """Market cap, always in billions: $45.31B, $0.22B."""
+    if v is None:
+        return "—"
+    return f"${float(v) / 1e9:.2f}B"
+
+
 def _compute_stats(rows) -> dict:
     buy_value = sell_value = 0.0
     buys = sells = 0
@@ -89,7 +96,11 @@ def _query_transactions(
     show_sells: bool,
     limit: int,
 ):
-    stmt = select(Transaction)
+    # Effective market cap prefers the weekly company table, else the per-row estimate.
+    eff_mktcap = func.coalesce(Company.market_cap, Transaction.market_cap)
+    stmt = select(Transaction, eff_mktcap).outerjoin(
+        Company, Company.cik == Transaction.issuer_cik
+    )
     if not show_sells:
         stmt = stmt.where(Transaction.acquired_disposed == "A")  # buys only
     if ticker:
@@ -103,12 +114,16 @@ def _query_transactions(
         stmt = stmt.where(Transaction.value >= mv)
     mc = _coerce_float(min_market_cap)
     if mc is not None:
-        stmt = stmt.where(Transaction.market_cap >= mc)
+        stmt = stmt.where(eff_mktcap >= mc)
     stmt = stmt.order_by(
         Transaction.filing_date.desc(), Transaction.id.desc()
     ).limit(limit)
     with SessionLocal() as session:
-        return list(session.scalars(stmt))
+        rows = []
+        for txn, eff in session.execute(stmt):
+            txn.effective_market_cap = eff
+            rows.append(txn)
+        return rows
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -134,6 +149,7 @@ def index(
             "rows": rows,
             "stats": stats,
             "money": _money,
+            "bcap": _bcap,
             "filters": {
                 "ticker": ticker or "",
                 "insider": insider or "",

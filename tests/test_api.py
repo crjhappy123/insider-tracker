@@ -67,6 +67,20 @@ def test_min_market_cap_filter(client, seeded_db):
     assert data[0]["market_cap"] == 3_000_000_000_000
 
 
+def test_company_table_overrides_row_market_cap(client, seeded_db):
+    """A companies row wins over the per-transaction market_cap estimate."""
+    from app.db import SessionLocal
+    from app.models import Company
+
+    with SessionLocal() as s:
+        s.merge(Company(cik="320193", ticker="AAPL", market_cap=4_000_000_000_000))
+        s.commit()
+
+    data = client.get("/api/transactions").json()  # buys only → AAPL
+    assert len(data) == 1
+    assert data[0]["market_cap"] == 4_000_000_000_000  # company value, not row's 3T
+
+
 def test_insider_substring(client, seeded_db):
     resp = client.get("/api/transactions?insider=cook")
     assert len(resp.json()) == 1

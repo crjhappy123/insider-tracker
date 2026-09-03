@@ -29,3 +29,15 @@ CREATE INDEX IF NOT EXISTS ix_value       ON transactions(value);
 CREATE INDEX IF NOT EXISTS ix_code        ON transactions(transaction_code);
 CREATE INDEX IF NOT EXISTS ix_insider     ON transactions(insider_name);
 CREATE INDEX IF NOT EXISTS ix_market_cap  ON transactions(market_cap);
+
+-- Company-level market cap, refreshed on its own (weekly) schedule.
+CREATE TABLE IF NOT EXISTS companies (
+  cik                TEXT PRIMARY KEY,
+  ticker             TEXT,
+  name               TEXT,
+  shares_outstanding REAL,
+  ref_price          REAL,               -- most recent nonzero insider trade price
+  market_cap         REAL,               -- shares_outstanding × ref_price
+  updated_at         TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_companies_ticker ON companies(ticker);

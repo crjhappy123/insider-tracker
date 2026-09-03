@@ -1,6 +1,6 @@
 """SQLAlchemy models for insider trading data."""
 from datetime import date, datetime
-from typing import Optional
+from typing import ClassVar, Optional
 
 from sqlalchemy import Date, DateTime, Float, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
@@ -44,6 +44,9 @@ class Transaction(Base):
     security_title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    # Effective (company-level) market cap, attached at query time; not persisted.
+    effective_market_cap: ClassVar[Optional[float]] = None
+
     def as_dict(self) -> dict:
         return {
             "filing_date": self.filing_date.isoformat() if self.filing_date else None,
@@ -58,6 +61,22 @@ class Transaction(Base):
             "price": self.price,
             "value": self.value,
             "shares_owned_after": self.shares_owned_after,
-            "market_cap": self.market_cap,
+            "market_cap": self.effective_market_cap
+            if self.effective_market_cap is not None
+            else self.market_cap,
             "accession_no": self.accession_no,
         }
+
+
+class Company(Base):
+    """Company-level market cap, refreshed weekly (see scraper/build_companies.py)."""
+
+    __tablename__ = "companies"
+
+    cik: Mapped[str] = mapped_column(String(16), primary_key=True)
+    ticker: Mapped[Optional[str]] = mapped_column(String(16), index=True, nullable=True)
+    name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    shares_outstanding: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    ref_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    market_cap: Mapped[Optional[float]] = mapped_column(Float, index=True, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
