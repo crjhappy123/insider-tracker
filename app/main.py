@@ -10,6 +10,9 @@ from sqlalchemy import func, select
 from app.db import SessionLocal, init_db
 from app.models import AiScore, Company, DailyReport, Transaction
 
+# Baseline market-cap floor for the table (mirrors functions/_query.js).
+MIN_DISPLAY_MKTCAP = 1e9  # $1B
+
 app = FastAPI(title="Insider Tracker")
 templates = Jinja2Templates(
     directory=os.path.join(os.path.dirname(__file__), "templates")
@@ -108,6 +111,8 @@ def _query_ticker_rollup(
     Mirrors functions/_query.js queryTickerRollup — the page's rolled-up view.
     """
     eff_mktcap = func.coalesce(Company.market_cap, func.max(Transaction.market_cap))
+    # Baseline $1B floor: hide no-cap and sub-$1B companies; the filter can raise it.
+    mcap_floor = max(MIN_DISPLAY_MKTCAP, _coerce_float(min_market_cap) or 0)
     stmt = (
         select(
             func.max(Transaction.filing_date).label("filing_date"),
@@ -134,10 +139,7 @@ def _query_ticker_rollup(
         stmt = stmt.where(Transaction.insider_name.ilike(f"%{insider}%"))
     if code:
         stmt = stmt.where(Transaction.transaction_code == code.upper())
-    mc = _coerce_float(min_market_cap)
-    if mc is not None:
-        stmt = stmt.where(func.coalesce(Company.market_cap, Transaction.market_cap) >= mc)
-    stmt = stmt.group_by(Transaction.issuer_cik)
+    stmt = stmt.group_by(Transaction.issuer_cik).having(eff_mktcap >= mcap_floor)
     mv = _coerce_float(min_value)
     if mv is not None:  # min_value filters the company total in this view
         stmt = stmt.having(func.sum(Transaction.value) >= mv)

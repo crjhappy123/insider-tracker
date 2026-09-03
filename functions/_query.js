@@ -1,6 +1,10 @@
 // Shared D1 query + HTML rendering for the insider tracker.
 // Files prefixed with "_" are not routed by Cloudflare Pages.
 
+// Baseline market-cap floor for the table: hide companies with no market cap
+// or below this. The "Min mkt cap" filter can only raise it, never lower it.
+const MIN_DISPLAY_MKTCAP = 1e9; // $1B
+
 // Parse filter params from the request URL, coercing blanks to null.
 export function parseFilters(url) {
   const g = (k) => {
@@ -92,10 +96,10 @@ export async function queryTickerRollup(db, f) {
     where.push("t.transaction_code = ?");
     binds.push(f.code.toUpperCase());
   }
-  if (f.minMarketCap !== null) {
-    where.push("COALESCE(c.market_cap, t.market_cap) >= ?");
-    binds.push(f.minMarketCap);
-  }
+  // Effective (company-level) market-cap floor: baseline $1B, raised by the
+  // filter if higher. Applied on the aggregate so no-cap companies drop out too.
+  const mcapFloor = Math.max(MIN_DISPLAY_MKTCAP, f.minMarketCap ?? 0);
+  having.push("COALESCE(c.market_cap, MAX(t.market_cap)) >= ?");
   // min_value filters on the company's *total* bought here (rolled-up view).
   if (f.minValue !== null) {
     having.push("SUM(t.value) >= ?");
@@ -120,11 +124,9 @@ export async function queryTickerRollup(db, f) {
     "LEFT JOIN companies c ON c.cik = t.issuer_cik " +
     "LEFT JOIN ai_scores a ON a.accession_no = t.accession_no AND a.line_no = t.line_no";
   if (where.length) sql += " WHERE " + where.join(" AND ");
-  sql += " GROUP BY t.issuer_cik";
-  if (having.length) {
-    sql += " HAVING " + having.join(" AND ");
-    binds.push(f.minValue);
-  }
+  sql += " GROUP BY t.issuer_cik HAVING " + having.join(" AND ");
+  binds.push(mcapFloor); // matches the first HAVING condition
+  if (f.minValue !== null) binds.push(f.minValue);
   sql += " ORDER BY MAX(t.filing_date) DESC, SUM(t.value) DESC LIMIT ?";
   binds.push(f.limit);
 
@@ -562,7 +564,7 @@ ${renderBoards(boards)}
   <label>Ticker<input name="ticker" value="${esc(f.ticker || "")}" placeholder="AAPL" size="8"></label>
   <label>Insider<input name="insider" value="${esc(f.insider || "")}" placeholder="name" size="14"></label>
   <label>Min $ value<input name="min_value" value="${f.minValue ?? ""}" placeholder="100000" size="10"></label>
-  <label>Min mkt cap<input name="min_market_cap" value="${f.minMarketCap ?? ""}" placeholder="100000000" size="12"></label>
+  <label>Min mkt cap<input name="min_market_cap" value="${f.minMarketCap ?? ""}" placeholder="1000000000 ($1B)" size="12"></label>
   <label>Limit<input name="limit" value="${f.limit}" size="5"></label>
   <button type="submit">Filter</button>
   <a class="reset" href="/">reset</a>
