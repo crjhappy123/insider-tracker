@@ -1,0 +1,14 @@
+{
+  "name": "insider-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler pages dev public",
+    "deploy": "wrangler pages deploy public",
+    "db:schema": "wrangler d1 execute insider --remote --file=schema.sql",
+    "db:load": "wrangler d1 execute insider --remote --file=data.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^3.80.0"
+  }
+}
