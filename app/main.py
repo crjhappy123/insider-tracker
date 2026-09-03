@@ -108,7 +108,7 @@ def _query_transactions(
         )
     )
     if not show_sells:
-        stmt = stmt.where(Transaction.acquired_disposed == "A")  # buys only
+        stmt = stmt.where(Transaction.transaction_code == "P")  # open-market buys only
     if ticker:
         stmt = stmt.where(Transaction.ticker == ticker.upper())
     if insider:
@@ -155,6 +155,26 @@ def index(
         report = session.scalars(
             select(DailyReport).order_by(DailyReport.report_date.desc()).limit(1)
         ).first()
+        report_picks = []
+        if report is not None:
+            report_picks = list(
+                session.execute(
+                    select(
+                        Transaction.ticker,
+                        Transaction.company_name,
+                        AiScore.score,
+                        AiScore.rating,
+                        AiScore.comment,
+                    )
+                    .join(
+                        AiScore,
+                        (AiScore.accession_no == Transaction.accession_no)
+                        & (AiScore.line_no == Transaction.line_no),
+                    )
+                    .where(Transaction.filing_date == report.report_date)
+                    .order_by(AiScore.score.desc())
+                )
+            )
     return templates.TemplateResponse(
         "index.html",
         {
@@ -162,6 +182,7 @@ def index(
             "rows": rows,
             "stats": stats,
             "report": report,
+            "report_picks": report_picks,
             "money": _money,
             "bcap": _bcap,
             "filters": {
