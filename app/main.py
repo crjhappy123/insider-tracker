@@ -157,24 +157,27 @@ def index(
         ).first()
         report_picks = []
         if report is not None:
-            report_picks = list(
-                session.execute(
-                    select(
-                        Transaction.ticker,
-                        Transaction.company_name,
-                        AiScore.score,
-                        AiScore.rating,
-                        AiScore.comment,
-                    )
-                    .join(
-                        AiScore,
-                        (AiScore.accession_no == Transaction.accession_no)
-                        & (AiScore.line_no == Transaction.line_no),
-                    )
-                    .where(Transaction.filing_date == report.report_date)
-                    .order_by(AiScore.score.desc())
+            seen = set()
+            for row in session.execute(
+                select(
+                    Transaction.ticker,
+                    Transaction.company_name,
+                    AiScore.score,
+                    AiScore.rating,
+                    AiScore.comment,
                 )
-            )
+                .join(
+                    AiScore,
+                    (AiScore.accession_no == Transaction.accession_no)
+                    & (AiScore.line_no == Transaction.line_no),
+                )
+                .where(Transaction.filing_date == report.report_date)
+                .order_by(AiScore.score.desc())
+            ):
+                if row.ticker in seen:  # one block per company
+                    continue
+                seen.add(row.ticker)
+                report_picks.append(row)
     return templates.TemplateResponse(
         "index.html",
         {

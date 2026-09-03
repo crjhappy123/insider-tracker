@@ -1,0 +1,1 @@
+INSERT OR REPLACE INTO daily_reports (report_date, summary, model, created_at) VALUES ('2026-09-01', '今日基本面最为突出的标的为具备极高自由现金流与护城河的德州太平洋土地公司（TPL）以及具备防御性现金流和强定价权的固废处理巨头共和服务（RSG）。工业制造龙头ITT也展现出扎实的盈利质量与稳健的增长韧性。', 'gemini-3.7-flash', '2026-09-03 05:51:45.769665');

@@ -102,7 +102,13 @@ export async function latestReport(db) {
       )
       .bind(row.report_date)
       .all();
-    row.picks = results || [];
+    // One block per company (dedupe by ticker; rows are score-desc ordered).
+    const seen = new Set();
+    row.picks = (results || []).filter((p) => {
+      if (seen.has(p.ticker)) return false;
+      seen.add(p.ticker);
+      return true;
+    });
     return row;
   } catch {
     return null; // tables may not exist yet

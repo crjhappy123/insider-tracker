@@ -64,19 +64,24 @@ _RESPONSE_SCHEMA = {
 }
 
 _INSTRUCTIONS = (
-    "You are an equity analyst reviewing U.S. insider OPEN-MARKET PURCHASES "
-    "(SEC Form 4, transaction code P). Respond in SIMPLIFIED CHINESE (简体中文) "
-    "for the `report` and every `comment`. For EACH transaction:\n"
-    "- Give a 0-100 conviction score and a `rating` that is exactly one of "
-    "强 / 中等 / 弱.\n"
-    "- Write a DETAILED `comment` of 2-3 Chinese sentences that combines the "
-    "insider signal (buy size vs. market cap, the insider's role, buyer "
-    "clustering) WITH the stock's TECHNICAL posture from the provided "
-    "`technicals` (price vs. 50/200-day moving averages, distance from 52-week "
-    "high/low, 1M/3M momentum). Name the concrete technical read, e.g. "
-    "『股价跌破200日均线，近3个月下跌18%，内部人逆势买入』。\n"
-    "Then write `report`: a SHORT 1-2 sentence Chinese overall intro to the day "
-    "only (per-company detail belongs in each comment, not here).\n"
+    "These are U.S. companies where a corporate insider made an open-market "
+    "purchase (SEC Form 4, code P) — treat the insider buy ONLY as the watchlist "
+    "filter, NOT as a scoring input. You are a fundamental equity analyst. "
+    "Respond in SIMPLIFIED CHINESE (简体中文) for the `report` and every `comment`.\n"
+    "For EACH company:\n"
+    "- Give a 0-100 `score` reflecting the company's INVESTMENT ATTRACTIVENESS "
+    "based ONLY on FUNDAMENTALS and INDUSTRY/SECTOR analysis: valuation, revenue/"
+    "earnings growth, profitability & margins, balance-sheet health, competitive "
+    "moat, and the outlook for its industry. Do NOT let the insider purchase, its "
+    "size, or the buyer's title affect the score. Use your knowledge of the "
+    "company; if you don't know it well, score conservatively and say so.\n"
+    "- `rating` must be exactly one of 强 / 中等 / 弱.\n"
+    "- `comment`: 2-3 Chinese sentences on the fundamental + industry thesis "
+    "(the basis for the score); you may add one clause on the provided "
+    "`technicals` (price vs. 50/200-day MA, 52-week range, momentum) for timing "
+    "context only.\n"
+    "Then write `report`: a SHORT 1-2 sentence Chinese intro summarizing the "
+    "day's fundamentally strongest names.\n"
     "仅供参考，非投资建议。"
 )
 
@@ -104,11 +109,6 @@ def _scored_buys(day: date) -> list[dict]:
                     "id": f"{t.accession_no}:{t.line_no}",
                     "ticker": t.ticker,
                     "company": t.company_name,
-                    "insider": t.insider_name,
-                    "title": t.insider_title,
-                    "shares": t.shares,
-                    "price": t.price,
-                    "value": t.value,
                     "market_cap": mktcap,
                     "technicals": get_technicals(t.ticker),
                 }
