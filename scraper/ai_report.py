@@ -5,7 +5,7 @@ most notable insider BUYS, asks Gemini for a conviction score + one-line comment
 per pick and a short daily buy-opinion report, and stores both in the DB.
 
 Requires GEMINI_API_KEY. If unset, generate() is a no-op (pipeline still succeeds).
-Model is configurable via GEMINI_MODEL (default gemini-2.0-flash).
+Model is configurable via GEMINI_MODEL (default gemini-3.6-flash).
 
     python -m scraper.ai_report 2026-09-02
 """
@@ -25,7 +25,8 @@ from app.db import SessionLocal, init_db
 from app.models import AiScore, Company, DailyReport, Transaction
 
 API_KEY = os.environ.get("GEMINI_API_KEY")
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+# `or` (not a default arg) so an empty env value from CI falls back too.
+MODEL = os.environ.get("GEMINI_MODEL") or "gemini-3.6-flash"
 TOP_N = int(os.environ.get("AI_TOP_N", "15"))
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
