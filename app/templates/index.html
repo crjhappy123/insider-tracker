@@ -60,8 +60,8 @@
     th,td{padding:.55rem .7rem;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border)}
     thead th{position:sticky;top:0;background:var(--surface);z-index:1;color:var(--muted);
       font-size:.68rem;letter-spacing:.07em;text-transform:uppercase;font-weight:600}
-    tbody tr{transition:background .12s}
-    tbody tr:hover{background:var(--glass)}
+    tbody tr{transition:filter .12s}
+    tbody tr:hover{filter:brightness(1.22)}
     td.n{text-align:right;font-variant-numeric:tabular-nums}
     td.dim{color:var(--muted)}
     td.co{max-width:220px;overflow:hidden;text-overflow:ellipsis}
@@ -103,15 +103,18 @@
     .lb-co{color:var(--ink2);font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .lb-val{font-size:.8rem;font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
     :root{--mc-mega:#e0a92e;--mc-large:var(--accent);--mc-mid:#2bb3a3;--mc-small:#8a8a8a;--mc-micro:var(--border)}
+    tbody tr.mc-mega  td{background:color-mix(in srgb,var(--mc-mega) 26%,transparent)}
+    tbody tr.mc-large td{background:color-mix(in srgb,var(--mc-large) 18%,transparent)}
+    tbody tr.mc-mid   td{background:color-mix(in srgb,var(--mc-mid) 10%,transparent)}
+    tbody tr.mc-micro,tbody tr.mc-unknown{opacity:.5}
     tbody tr.mc-mega  td:first-child{box-shadow:inset 3px 0 0 var(--mc-mega)}
     tbody tr.mc-large td:first-child{box-shadow:inset 3px 0 0 var(--mc-large)}
     tbody tr.mc-mid   td:first-child{box-shadow:inset 3px 0 0 var(--mc-mid)}
     tbody tr.mc-small td:first-child{box-shadow:inset 3px 0 0 var(--mc-small)}
     tbody tr.mc-micro td:first-child,tbody tr.mc-unknown td:first-child{box-shadow:inset 3px 0 0 var(--mc-micro)}
-    tr.mc-mega  .mcap{color:var(--mc-mega);font-weight:700}
-    tr.mc-large .mcap{color:var(--mc-large);font-weight:600}
-    tr.mc-mid   .mcap{color:var(--mc-mid)}
-    tr.mc-small,tr.mc-micro,tr.mc-unknown{opacity:.72}
+    tbody tr.mc-mega  .mcap{color:var(--mc-mega);font-weight:700}
+    tbody tr.mc-large .mcap{color:var(--mc-large);font-weight:600}
+    tbody tr.mc-mid   .mcap{color:var(--mc-mid)}
     .legend{display:flex;gap:.9rem;flex-wrap:wrap;font-size:.68rem;color:var(--muted);margin:.2rem 0 .6rem}
     .legend .k{display:inline-flex;align-items:center;gap:.3rem}
     .legend .sw{width:.7rem;height:.7rem;border-radius:2px;display:inline-block}
