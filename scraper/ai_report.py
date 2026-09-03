@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from datetime import date, datetime
 
 import requests
@@ -109,15 +110,23 @@ def _call_gemini(items: list[dict]) -> dict:
             "temperature": 0.4,
         },
     }
-    resp = requests.post(
-        ENDPOINT.format(model=MODEL),
-        params={"key": API_KEY},
-        json=body,
-        timeout=120,
-    )
-    resp.raise_for_status()
-    text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-    return json.loads(text)
+    # Retry transient overload/rate-limit responses with exponential backoff.
+    last_exc = None
+    for attempt in range(4):
+        resp = requests.post(
+            ENDPOINT.format(model=MODEL),
+            params={"key": API_KEY},
+            json=body,
+            timeout=120,
+        )
+        if resp.status_code in (429, 500, 503):
+            last_exc = requests.HTTPError(f"{resp.status_code} from Gemini")
+            time.sleep(2 ** attempt * 5)  # 5s, 10s, 20s, 40s
+            continue
+        resp.raise_for_status()
+        text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+        return json.loads(text)
+    raise last_exc
 
 
 def generate(day: date) -> int:
@@ -132,7 +141,12 @@ def generate(day: date) -> int:
         print(f"{day}: no buys to score.")
         return 0
 
-    result = _call_gemini(items)
+    try:
+        result = _call_gemini(items)
+    except (requests.HTTPError, requests.RequestException, ValueError, KeyError) as e:
+        # Don't fail the pipeline on a transient AI outage; skip today's report.
+        print(f"{day}: AI report skipped ({e}).")
+        return 0
     # Map returned scores back to (accession_no, line_no) via the id we passed in.
     by_id = {p["id"]: p for p in result.get("picks", [])}
 
