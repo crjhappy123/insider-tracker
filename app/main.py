@@ -53,23 +53,187 @@ def _bcap(v) -> str:
     return f"${float(v) / 1e9:.2f}B"
 
 
+def _mcap_tier(v) -> str:
+    """Market-cap tier CSS class so larger companies stand out visually.
+
+    mega ≥ $200B, large ≥ $10B, mid ≥ $2B, small ≥ $300M, else micro/unknown.
+    """
+    if v is None:
+        return "mc-unknown"
+    n = float(v)
+    if n >= 200e9:
+        return "mc-mega"
+    if n >= 10e9:
+        return "mc-large"
+    if n >= 2e9:
+        return "mc-mid"
+    if n >= 300e6:
+        return "mc-small"
+    return "mc-micro"
+
+
 def _compute_stats(rows) -> dict:
-    """Headline stats. Every stored row is an open-market purchase (code P)."""
+    """Headline stats over the rolled-up (per-company) rows."""
     buy_value = 0.0
+    buys = 0
     max_buy = 0.0
     max_ticker = ""
     for r in rows:
-        v = r.value or 0
+        v = r["value"] or 0
         buy_value += v
+        buys += r["buy_count"] or 0
         if v > max_buy:
             max_buy = v
-            max_ticker = r.ticker or ""
+            max_ticker = r["ticker"] or ""
     return {
-        "count": len(rows),
+        "companies": len(rows),
+        "buys": buys,
         "buy_value": buy_value,
-        "avg_buy": buy_value / len(rows) if rows else 0,
+        "avg_company": buy_value / len(rows) if rows else 0,
         "max_buy": max_buy,
         "max_ticker": max_ticker,
+    }
+
+
+def _query_ticker_rollup(
+    ticker: Optional[str],
+    insider: Optional[str],
+    code: Optional[str],
+    min_value: Optional[str],
+    min_market_cap: Optional[str],
+    limit: int,
+):
+    """One row per company (issuer_cik): sum buy value + count, best AI score.
+
+    Mirrors functions/_query.js queryTickerRollup — the page's rolled-up view.
+    """
+    eff_mktcap = func.coalesce(Company.market_cap, func.max(Transaction.market_cap))
+    stmt = (
+        select(
+            func.max(Transaction.filing_date).label("filing_date"),
+            Transaction.ticker.label("ticker"),
+            func.max(Transaction.company_name).label("company_name"),
+            Transaction.issuer_cik.label("issuer_cik"),
+            func.count().label("buy_count"),
+            func.count(func.distinct(Transaction.insider_name)).label("insider_count"),
+            func.sum(Transaction.shares).label("shares"),
+            func.sum(Transaction.value).label("value"),
+            eff_mktcap.label("eff_mktcap"),
+            func.max(AiScore.score).label("ai_score"),
+        )
+        .outerjoin(Company, Company.cik == Transaction.issuer_cik)
+        .outerjoin(
+            AiScore,
+            (AiScore.accession_no == Transaction.accession_no)
+            & (AiScore.line_no == Transaction.line_no),
+        )
+    )
+    if ticker:
+        stmt = stmt.where(Transaction.ticker == ticker.upper())
+    if insider:
+        stmt = stmt.where(Transaction.insider_name.ilike(f"%{insider}%"))
+    if code:
+        stmt = stmt.where(Transaction.transaction_code == code.upper())
+    mc = _coerce_float(min_market_cap)
+    if mc is not None:
+        stmt = stmt.where(func.coalesce(Company.market_cap, Transaction.market_cap) >= mc)
+    stmt = stmt.group_by(Transaction.issuer_cik)
+    mv = _coerce_float(min_value)
+    if mv is not None:  # min_value filters the company total in this view
+        stmt = stmt.having(func.sum(Transaction.value) >= mv)
+    stmt = stmt.order_by(
+        func.max(Transaction.filing_date).desc(), func.sum(Transaction.value).desc()
+    ).limit(limit)
+
+    with SessionLocal() as session:
+        rows = []
+        for r in session.execute(stmt):
+            m = r._mapping
+            shares, value = m["shares"], m["value"]
+            rows.append(
+                {
+                    "filing_date": m["filing_date"],
+                    "ticker": m["ticker"],
+                    "company_name": m["company_name"],
+                    "issuer_cik": m["issuer_cik"],
+                    "buy_count": m["buy_count"],
+                    "insider_count": m["insider_count"],
+                    "shares": shares,
+                    "value": value,
+                    "avg_price": (value / shares) if (value and shares) else None,
+                    "eff_mktcap": m["eff_mktcap"],
+                    "ai_score": m["ai_score"],
+                    "ai_rating": None,
+                    "ai_comment": None,
+                }
+            )
+        # Best AI pick (highest score) per company drives the score pill hover.
+        best: dict[str, tuple] = {}
+        for cik, rating, comment in session.execute(
+            select(Transaction.issuer_cik, AiScore.rating, AiScore.comment)
+            .join(
+                AiScore,
+                (AiScore.accession_no == Transaction.accession_no)
+                & (AiScore.line_no == Transaction.line_no),
+            )
+            .order_by(AiScore.score.desc())
+        ):
+            best.setdefault(cik, (rating, comment))
+        for row in rows:
+            if row["issuer_cik"] in best:
+                row["ai_rating"], row["ai_comment"] = best[row["issuer_cik"]]
+        return rows
+
+
+def _rank_board(rows) -> list[dict]:
+    """Collapse score-desc rows to one per ticker (best score), sum buy value."""
+    by_ticker: dict[str, dict] = {}
+    for r in rows:
+        key = r.ticker or r.company_name
+        if key not in by_ticker:
+            by_ticker[key] = {
+                "ticker": r.ticker,
+                "company_name": r.company_name,
+                "score": r.score,
+                "rating": r.rating,
+                "comment": r.comment,
+                "value": 0.0,
+                "buys": 0,
+            }
+        e = by_ticker[key]
+        e["value"] += r.value or 0
+        e["buys"] += 1
+    return sorted(by_ticker.values(), key=lambda e: e["score"] or 0, reverse=True)[:15]
+
+
+def _leaderboards() -> dict:
+    """Daily (latest scored day) + weekly (whole window) AI score boards."""
+    stmt = (
+        select(
+            Transaction.filing_date,
+            Transaction.ticker,
+            Transaction.company_name,
+            Transaction.value,
+            AiScore.score,
+            AiScore.rating,
+            AiScore.comment,
+        )
+        .join(
+            AiScore,
+            (AiScore.accession_no == Transaction.accession_no)
+            & (AiScore.line_no == Transaction.line_no),
+        )
+        .where(AiScore.score.is_not(None))
+        .order_by(AiScore.score.desc())
+    )
+    with SessionLocal() as session:
+        rows = list(session.execute(stmt))
+    if not rows:
+        return {"daily": [], "weekly": []}
+    latest = max(r.filing_date for r in rows)
+    return {
+        "daily": _rank_board([r for r in rows if r.filing_date == latest]),
+        "weekly": _rank_board(rows),
     }
 
 
@@ -128,14 +292,24 @@ def index(
     min_market_cap: Optional[str] = None,
     limit: int = Query(200, le=1000),
 ):
-    rows = _query_transactions(
+    rows = _query_ticker_rollup(
         ticker, insider, code, min_value, min_market_cap, limit
     )
     stats = _compute_stats(rows)
+    boards = _leaderboards()
     with SessionLocal() as session:
         report = session.scalars(
             select(DailyReport).order_by(DailyReport.report_date.desc()).limit(1)
         ).first()
+        # Only show the report if it covers the most recent data day; never fall
+        # back to a stale prior-day report.
+        latest_day = session.scalar(select(func.max(Transaction.filing_date)))
+        if (
+            report is not None
+            and latest_day is not None
+            and report.report_date != latest_day.isoformat()
+        ):
+            report = None
         report_picks = []
         if report is not None:
             seen = set()
@@ -165,10 +339,12 @@ def index(
             "request": request,
             "rows": rows,
             "stats": stats,
+            "boards": boards,
             "report": report,
             "report_picks": report_picks,
             "money": _money,
             "bcap": _bcap,
+            "mcap_tier": _mcap_tier,
             "filters": {
                 "ticker": ticker or "",
                 "insider": insider or "",

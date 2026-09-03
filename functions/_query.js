@@ -73,13 +73,129 @@ export async function queryTransactions(db, f) {
   return results || [];
 }
 
-// Latest AI daily report (most recent report_date) plus its per-company picks.
+// Aggregated ticker-rollup for the HTML table: one row per company (issuer_cik),
+// summing buy value and buy count across the retention window. The JSON API
+// stays per-transaction (queryTransactions); the page shows this rolled-up view.
+export async function queryTickerRollup(db, f) {
+  const where = [];
+  const having = [];
+  const binds = [];
+  if (f.ticker) {
+    where.push("t.ticker = ?");
+    binds.push(f.ticker.toUpperCase());
+  }
+  if (f.insider) {
+    where.push("t.insider_name LIKE ?");
+    binds.push(`%${f.insider}%`);
+  }
+  if (f.code) {
+    where.push("t.transaction_code = ?");
+    binds.push(f.code.toUpperCase());
+  }
+  if (f.minMarketCap !== null) {
+    where.push("COALESCE(c.market_cap, t.market_cap) >= ?");
+    binds.push(f.minMarketCap);
+  }
+  // min_value filters on the company's *total* bought here (rolled-up view).
+  if (f.minValue !== null) {
+    having.push("SUM(t.value) >= ?");
+  }
+
+  // Best AI pick per company (highest score) drives the score pill + hover.
+  const bestPick =
+    "(SELECT a2.%COL% FROM ai_scores a2 " +
+    "JOIN transactions t2 ON t2.accession_no = a2.accession_no AND t2.line_no = a2.line_no " +
+    "WHERE t2.issuer_cik = t.issuer_cik ORDER BY a2.score DESC LIMIT 1)";
+  let sql =
+    "SELECT MAX(t.filing_date) AS filing_date, MAX(t.trade_date) AS trade_date, " +
+    "t.ticker AS ticker, MAX(t.company_name) AS company_name, t.issuer_cik AS issuer_cik, " +
+    "COUNT(*) AS buy_count, COUNT(DISTINCT t.insider_name) AS insider_count, " +
+    "SUM(t.shares) AS shares, SUM(t.value) AS value, " +
+    "CASE WHEN SUM(t.shares) > 0 THEN SUM(t.value) / SUM(t.shares) END AS avg_price, " +
+    "COALESCE(c.market_cap, MAX(t.market_cap)) AS eff_mktcap, " +
+    "MAX(a.score) AS ai_score, " +
+    bestPick.replace("%COL%", "rating") + " AS ai_rating, " +
+    bestPick.replace("%COL%", "comment") + " AS ai_comment " +
+    "FROM transactions t " +
+    "LEFT JOIN companies c ON c.cik = t.issuer_cik " +
+    "LEFT JOIN ai_scores a ON a.accession_no = t.accession_no AND a.line_no = t.line_no";
+  if (where.length) sql += " WHERE " + where.join(" AND ");
+  sql += " GROUP BY t.issuer_cik";
+  if (having.length) {
+    sql += " HAVING " + having.join(" AND ");
+    binds.push(f.minValue);
+  }
+  sql += " ORDER BY MAX(t.filing_date) DESC, SUM(t.value) DESC LIMIT ?";
+  binds.push(f.limit);
+
+  const { results } = await db
+    .prepare(sql)
+    .bind(...binds)
+    .all();
+  return results || [];
+}
+
+// AI score leaderboards: daily (latest scored day) and weekly (whole window).
+// Dedupe by ticker keeping its highest score; sum the ticker's buy value in scope.
+export async function leaderboards(db) {
+  try {
+    const { results } = await db
+      .prepare(
+        "SELECT t.filing_date, t.ticker, t.company_name, t.value, " +
+          "a.score, a.rating, a.comment " +
+          "FROM ai_scores a " +
+          "JOIN transactions t ON t.accession_no = a.accession_no AND t.line_no = a.line_no " +
+          "WHERE a.score IS NOT NULL ORDER BY a.score DESC"
+      )
+      .all();
+    const rows = results || [];
+    if (!rows.length) return { daily: [], weekly: [] };
+    const latest = rows.reduce((m, r) => (r.filing_date > m ? r.filing_date : m), "");
+    return {
+      daily: rankBoard(rows.filter((r) => r.filing_date === latest)),
+      weekly: rankBoard(rows),
+    };
+  } catch {
+    return { daily: [], weekly: [] };
+  }
+}
+
+// Collapse score-desc rows to one entry per ticker (best score wins), sum value.
+function rankBoard(rows) {
+  const byTicker = new Map();
+  for (const r of rows) {
+    const key = r.ticker || r.company_name;
+    if (!byTicker.has(key)) {
+      byTicker.set(key, {
+        ticker: r.ticker,
+        company_name: r.company_name,
+        score: r.score,
+        rating: r.rating,
+        comment: r.comment,
+        value: 0,
+        buys: 0,
+      });
+    }
+    const e = byTicker.get(key);
+    e.value += Number(r.value) || 0;
+    e.buys += 1;
+  }
+  return [...byTicker.values()].sort((a, b) => b.score - a.score).slice(0, 15);
+}
+
+// Latest AI daily report — but ONLY if it covers the most recent data day.
+// Otherwise (e.g. today ingested but the report was skipped) we hide it rather
+// than fall back to a stale prior-day report.
 export async function latestReport(db) {
   try {
     const row = await db
       .prepare("SELECT * FROM daily_reports ORDER BY report_date DESC LIMIT 1")
       .first();
     if (!row) return null;
+    const latest = await db
+      .prepare("SELECT MAX(filing_date) AS d FROM transactions")
+      .first();
+    if (latest && latest.d && row.report_date !== latest.d) return null; // stale
     const { results } = await db
       .prepare(
         "SELECT t.ticker, t.company_name, t.insider_name, t.value, " +
@@ -147,6 +263,18 @@ function bcap(v) {
   return `$${(Number(v) / 1e9).toFixed(2)}B`;
 }
 
+// Market-cap tier → CSS class, so larger companies stand out visually.
+// mega ≥ $200B, large ≥ $10B, mid ≥ $2B, small ≥ $300M, else micro/unknown.
+function mcapTier(v) {
+  if (v === null || v === undefined) return "mc-unknown";
+  const n = Number(v);
+  if (n >= 200e9) return "mc-mega";
+  if (n >= 10e9) return "mc-large";
+  if (n >= 2e9) return "mc-mid";
+  if (n >= 300e6) return "mc-small";
+  return "mc-micro";
+}
+
 // Compact currency: $9.9M, $270K, $540.
 function money(v) {
   if (v === null || v === undefined) return "—";
@@ -159,20 +287,59 @@ function money(v) {
   return `${sign}$${abs.toFixed(0)}`;
 }
 
-// Roll up the shown rows into headline stats. Every row is an open-market buy.
+// Headline stats over the rolled-up (per-company) rows.
 function computeStats(rows) {
   let buyValue = 0,
+    buys = 0,
     maxBuy = 0,
     maxTicker = "";
   for (const r of rows) {
     const v = Number(r.value) || 0;
     buyValue += v;
+    buys += Number(r.buy_count) || 0;
     if (v > maxBuy) {
       maxBuy = v;
       maxTicker = r.ticker || "";
     }
   }
-  return { count: rows.length, buyValue, maxBuy, maxTicker };
+  return { companies: rows.length, buys, buyValue, maxBuy, maxTicker };
+}
+
+// One leaderboard row: rank, ticker, company, score pill, total bought.
+function boardRow(r, i) {
+  const s = Number(r.score);
+  const cls = s >= 70 ? "hi" : s >= 40 ? "mid" : "lo";
+  return `<div class="lb-row">
+    <span class="lb-rank">${i + 1}</span>
+    <span class="ticker">${esc(r.ticker || "—")}</span>
+    <span class="lb-co">${esc(r.company_name || "")}</span>
+    <span class="ai ${cls}" title="${esc(r.rating || "")}: ${esc(
+    r.comment || ""
+  )}">${s}</span>
+    <span class="lb-val">${money(r.value)}</span>
+  </div>`;
+}
+
+// Daily/weekly AI leaderboards as a pure-CSS tabbed card (no client JS).
+function renderBoards(boards) {
+  if (!boards || (!boards.daily.length && !boards.weekly.length)) return "";
+  const list = (rows) =>
+    rows.length
+      ? rows.map(boardRow).join("")
+      : `<div class="empty">No scored buys yet.</div>`;
+  return `<section class="card lb">
+    <input type="radio" name="lbtab" id="lb-daily" checked>
+    <input type="radio" name="lbtab" id="lb-weekly">
+    <div class="lb-head">
+      🏆 AI Leaderboard
+      <div class="lb-tabs">
+        <label for="lb-daily" class="lb-tab lb-tab-d">Daily</label>
+        <label for="lb-weekly" class="lb-tab lb-tab-w">Weekly</label>
+      </div>
+    </div>
+    <div class="lb-panel lb-panel-d">${list(boards.daily)}</div>
+    <div class="lb-panel lb-panel-w">${list(boards.weekly)}</div>
+  </section>`;
 }
 
 // AI score pill (color by conviction) + comment on hover.
@@ -194,31 +361,29 @@ function tile(label, value, accentVar, sub) {
 }
 
 // Render the full HTML page.
-export function renderPage(rows, f, report) {
+export function renderPage(rows, f, report, boards) {
   const s = computeStats(rows);
 
   const bodyRows = rows.length
     ? rows
         .map((r) => {
-          return `<tr class="buy">
+          return `<tr class="buy ${mcapTier(r.eff_mktcap)}">
             <td class="dim">${esc(r.filing_date)}</td>
-            <td class="dim">${esc(r.trade_date || "")}</td>
             <td class="tk">
               <span class="ticker">${esc(r.ticker || "—")}</span>
               <span class="mcap">${bcap(r.eff_mktcap)}</span>
             </td>
             <td class="co">${esc(r.company_name)}</td>
-            <td>${esc(r.insider_name)}</td>
-            <td class="dim">${esc(r.insider_title)}</td>
+            <td class="n">${num(r.insider_count)}</td>
+            <td class="n">${num(r.buy_count)}</td>
             <td>${aiCell(r)}</td>
-            <td class="n">${r.price != null ? "$" + Number(r.price).toFixed(2) : ""}</td>
+            <td class="n">${r.avg_price != null ? "$" + Number(r.avg_price).toFixed(2) : ""}</td>
             <td class="n">${num(r.shares)}</td>
             <td class="n val">${r.value != null ? money(r.value) : ""}</td>
-            <td class="n dim">${num(r.shares_owned_after)}</td>
           </tr>`;
         })
         .join("")
-    : `<tr><td colspan="11" class="empty">No transactions match your filters.</td></tr>`;
+    : `<tr><td colspan="9" class="empty">No transactions match your filters.</td></tr>`;
 
   const pickBlocks = (report && report.picks ? report.picks : [])
     .map((p) => {
@@ -340,6 +505,39 @@ tbody tr.buy td:first-child{box-shadow:inset 3px 0 0 var(--buy)}
 .ai.hi{color:var(--buy);background:color-mix(in srgb,var(--buy) 18%,transparent)}
 .ai.mid{color:var(--accent);background:color-mix(in srgb,var(--accent) 16%,transparent)}
 .ai.lo{color:var(--muted);background:var(--glass)}
+/* AI leaderboard (pure-CSS tabs) */
+.lb{padding:1.1rem 1.25rem;margin-bottom:1.1rem}
+.lb>input{position:absolute;opacity:0;pointer-events:none}
+.lb-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;font-size:.95rem;font-weight:700;margin-bottom:.7rem;flex-wrap:wrap}
+.lb-tabs{display:flex;gap:.3rem}
+.lb-tab{font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);
+  padding:.3rem .7rem;border:1px solid var(--border);border-radius:8px;cursor:pointer}
+.lb-tab:hover{color:var(--ink)}
+#lb-daily:checked~.lb-head .lb-tab-d,#lb-weekly:checked~.lb-head .lb-tab-w{
+  color:#fff;background:var(--accent);border-color:transparent}
+.lb-panel{display:none;flex-direction:column;gap:.35rem}
+#lb-daily:checked~.lb-panel-d,#lb-weekly:checked~.lb-panel-w{display:flex}
+.lb-row{display:grid;grid-template-columns:1.6rem auto 1fr auto auto;align-items:center;gap:.6rem;
+  padding:.4rem .5rem;border-radius:8px}
+.lb-row:hover{background:var(--glass)}
+.lb-rank{color:var(--muted);font-variant-numeric:tabular-nums;font-size:.8rem;text-align:right}
+.lb-co{color:var(--ink2);font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lb-val{font-size:.8rem;font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
+/* Market-cap tiers: colored left bar + mcap label so big caps stand out. */
+:root{--mc-mega:#e0a92e;--mc-large:var(--accent);--mc-mid:#2bb3a3;--mc-small:#8a8a8a;--mc-micro:var(--border)}
+tbody tr.mc-mega  td:first-child{box-shadow:inset 3px 0 0 var(--mc-mega)}
+tbody tr.mc-large td:first-child{box-shadow:inset 3px 0 0 var(--mc-large)}
+tbody tr.mc-mid   td:first-child{box-shadow:inset 3px 0 0 var(--mc-mid)}
+tbody tr.mc-small td:first-child{box-shadow:inset 3px 0 0 var(--mc-small)}
+tbody tr.mc-micro td:first-child,tbody tr.mc-unknown td:first-child{box-shadow:inset 3px 0 0 var(--mc-micro)}
+tr.mc-mega  .mcap{color:var(--mc-mega);font-weight:700}
+tr.mc-large .mcap{color:var(--mc-large);font-weight:600}
+tr.mc-mid   .mcap{color:var(--mc-mid)}
+tr.mc-mega  .ticker,tr.mc-large .ticker{filter:none}
+tr.mc-small,tr.mc-micro,tr.mc-unknown{opacity:.72}
+.legend{display:flex;gap:.9rem;flex-wrap:wrap;font-size:.68rem;color:var(--muted);margin:.2rem 0 .6rem}
+.legend .k{display:inline-flex;align-items:center;gap:.3rem}
+.legend .sw{width:.7rem;height:.7rem;border-radius:2px;display:inline-block}
 </style></head><body><div class="wrap">
 <header>
   <div class="logo"><span class="dot"></span>Insider Tracker</div>
@@ -348,11 +546,13 @@ tbody tr.buy td:first-child{box-shadow:inset 3px 0 0 var(--buy)}
 
 ${reportCard}
 
+${renderBoards(boards)}
+
 <section class="kpi">
-  ${tile("Purchases", num(s.count), "--accent", "open-market buys (code P)")}
-  ${tile("Total Bought", money(s.buyValue), "--buy")}
-  ${tile("Avg Buy Size", money(s.count ? s.buyValue / s.count : 0), "--accent")}
-  ${tile("Largest Buy", money(s.maxBuy), "--buy", s.maxTicker || "")}
+  ${tile("Companies", num(s.companies), "--accent", "distinct tickers")}
+  ${tile("Total Bought", money(s.buyValue), "--buy", num(s.buys) + " buys (code P)")}
+  ${tile("Avg / Company", money(s.companies ? s.buyValue / s.companies : 0), "--accent")}
+  ${tile("Top Ticker Buy", money(s.maxBuy), "--buy", s.maxTicker || "")}
 </section>
 
 
@@ -366,10 +566,18 @@ ${reportCard}
   <a class="reset" href="/">reset</a>
 </form>
 
-<div class="count">${num(s.count)} transaction(s)</div>
+<div class="count">${num(s.companies)} companies · ${num(s.buys)} buys</div>
+<div class="legend">
+  <span class="k"><span class="sw" style="background:var(--mc-mega)"></span>Mega ≥$200B</span>
+  <span class="k"><span class="sw" style="background:var(--mc-large)"></span>Large ≥$10B</span>
+  <span class="k"><span class="sw" style="background:var(--mc-mid)"></span>Mid ≥$2B</span>
+  <span class="k"><span class="sw" style="background:var(--mc-small)"></span>Small ≥$300M</span>
+  <span class="k"><span class="sw" style="background:var(--mc-micro)"></span>Micro / —</span>
+</div>
 <div class="card tablecard"><table><thead><tr>
-<th>Filed</th><th>Trade</th><th>Ticker / Mkt Cap</th><th>Company</th><th>Insider</th><th>Title</th>
-<th>AI</th><th class="n">Price</th><th class="n">Qty</th><th class="n">Value</th><th class="n">Owned After</th>
+<th>Latest Filed</th><th>Ticker / Mkt Cap</th><th>Company</th>
+<th class="n">Insiders</th><th class="n">Buys</th><th>AI</th>
+<th class="n">Avg Price</th><th class="n">Total Qty</th><th class="n">Total Value</th>
 </tr></thead><tbody>${bodyRows}</tbody></table></div>
 </div></body></html>`;
 }

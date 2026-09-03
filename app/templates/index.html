@@ -87,6 +87,34 @@
     .ai.hi{color:var(--buy);background:color-mix(in srgb,var(--buy) 18%,transparent)}
     .ai.mid{color:var(--accent);background:color-mix(in srgb,var(--accent) 16%,transparent)}
     .ai.lo{color:var(--muted);background:var(--glass)}
+    .lb{padding:1.1rem 1.25rem;margin-bottom:1.1rem}
+    .lb>input{position:absolute;opacity:0;pointer-events:none}
+    .lb-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;font-size:.95rem;font-weight:700;margin-bottom:.7rem;flex-wrap:wrap}
+    .lb-tabs{display:flex;gap:.3rem}
+    .lb-tab{font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);
+      padding:.3rem .7rem;border:1px solid var(--border);border-radius:8px;cursor:pointer}
+    .lb-tab:hover{color:var(--ink)}
+    #lb-daily:checked~.lb-head .lb-tab-d,#lb-weekly:checked~.lb-head .lb-tab-w{color:#fff;background:var(--accent);border-color:transparent}
+    .lb-panel{display:none;flex-direction:column;gap:.35rem}
+    #lb-daily:checked~.lb-panel-d,#lb-weekly:checked~.lb-panel-w{display:flex}
+    .lb-row{display:grid;grid-template-columns:1.6rem auto 1fr auto auto;align-items:center;gap:.6rem;padding:.4rem .5rem;border-radius:8px}
+    .lb-row:hover{background:var(--glass)}
+    .lb-rank{color:var(--muted);font-variant-numeric:tabular-nums;font-size:.8rem;text-align:right}
+    .lb-co{color:var(--ink2);font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .lb-val{font-size:.8rem;font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
+    :root{--mc-mega:#e0a92e;--mc-large:var(--accent);--mc-mid:#2bb3a3;--mc-small:#8a8a8a;--mc-micro:var(--border)}
+    tbody tr.mc-mega  td:first-child{box-shadow:inset 3px 0 0 var(--mc-mega)}
+    tbody tr.mc-large td:first-child{box-shadow:inset 3px 0 0 var(--mc-large)}
+    tbody tr.mc-mid   td:first-child{box-shadow:inset 3px 0 0 var(--mc-mid)}
+    tbody tr.mc-small td:first-child{box-shadow:inset 3px 0 0 var(--mc-small)}
+    tbody tr.mc-micro td:first-child,tbody tr.mc-unknown td:first-child{box-shadow:inset 3px 0 0 var(--mc-micro)}
+    tr.mc-mega  .mcap{color:var(--mc-mega);font-weight:700}
+    tr.mc-large .mcap{color:var(--mc-large);font-weight:600}
+    tr.mc-mid   .mcap{color:var(--mc-mid)}
+    tr.mc-small,tr.mc-micro,tr.mc-unknown{opacity:.72}
+    .legend{display:flex;gap:.9rem;flex-wrap:wrap;font-size:.68rem;color:var(--muted);margin:.2rem 0 .6rem}
+    .legend .k{display:inline-flex;align-items:center;gap:.3rem}
+    .legend .sw{width:.7rem;height:.7rem;border-radius:2px;display:inline-block}
   </style>
 </head>
 <body><div class="wrap">
@@ -118,15 +146,46 @@
   </section>
   {% endif %}
 
+  {% macro board_rows(items) %}
+    {% if items %}
+      {% for r in items %}
+      <div class="lb-row">
+        <span class="lb-rank">{{ loop.index }}</span>
+        <span class="ticker">{{ r.ticker or "—" }}</span>
+        <span class="lb-co">{{ r.company_name or "" }}</span>
+        <span class="ai {{ 'hi' if (r.score or 0) >= 70 else 'mid' if (r.score or 0) >= 40 else 'lo' }}" title="{{ r.rating or '' }}: {{ r.comment or '' }}">{{ r.score }}</span>
+        <span class="lb-val">{{ money(r.value) }}</span>
+      </div>
+      {% endfor %}
+    {% else %}<div class="empty">No scored buys yet.</div>{% endif %}
+  {% endmacro %}
+
+  {% if boards and (boards.daily or boards.weekly) %}
+  <section class="card lb">
+    <input type="radio" name="lbtab" id="lb-daily" checked>
+    <input type="radio" name="lbtab" id="lb-weekly">
+    <div class="lb-head">
+      🏆 AI Leaderboard
+      <div class="lb-tabs">
+        <label for="lb-daily" class="lb-tab lb-tab-d">Daily</label>
+        <label for="lb-weekly" class="lb-tab lb-tab-w">Weekly</label>
+      </div>
+    </div>
+    <div class="lb-panel lb-panel-d">{{ board_rows(boards.daily) }}</div>
+    <div class="lb-panel lb-panel-w">{{ board_rows(boards.weekly) }}</div>
+  </section>
+  {% endif %}
+
   <section class="kpi">
-    <div class="tile card"><div class="tile-label">Purchases</div>
-      <div class="tile-value" style="color:var(--accent)">{{ "{:,}".format(stats.count) }}</div>
-      <div class="tile-sub">open-market buys (code P)</div></div>
+    <div class="tile card"><div class="tile-label">Companies</div>
+      <div class="tile-value" style="color:var(--accent)">{{ "{:,}".format(stats.companies) }}</div>
+      <div class="tile-sub">distinct tickers</div></div>
     <div class="tile card"><div class="tile-label">Total Bought</div>
-      <div class="tile-value" style="color:var(--buy)">{{ money(stats.buy_value) }}</div></div>
-    <div class="tile card"><div class="tile-label">Avg Buy Size</div>
-      <div class="tile-value" style="color:var(--accent)">{{ money(stats.avg_buy) }}</div></div>
-    <div class="tile card"><div class="tile-label">Largest Buy</div>
+      <div class="tile-value" style="color:var(--buy)">{{ money(stats.buy_value) }}</div>
+      <div class="tile-sub">{{ "{:,}".format(stats.buys) }} buys (code P)</div></div>
+    <div class="tile card"><div class="tile-label">Avg / Company</div>
+      <div class="tile-value" style="color:var(--accent)">{{ money(stats.avg_company) }}</div></div>
+    <div class="tile card"><div class="tile-label">Top Ticker Buy</div>
       <div class="tile-value" style="color:var(--buy)">{{ money(stats.max_buy) }}</div>
       <div class="tile-sub">{{ stats.max_ticker }}</div></div>
   </section>
@@ -143,36 +202,42 @@
     <a class="reset" href="/">reset</a>
   </form>
 
-  <div class="count">{{ "{:,}".format(stats.count) }} transaction(s)</div>
+  <div class="count">{{ "{:,}".format(stats.companies) }} companies · {{ "{:,}".format(stats.buys) }} buys</div>
+  <div class="legend">
+    <span class="k"><span class="sw" style="background:var(--mc-mega)"></span>Mega ≥$200B</span>
+    <span class="k"><span class="sw" style="background:var(--mc-large)"></span>Large ≥$10B</span>
+    <span class="k"><span class="sw" style="background:var(--mc-mid)"></span>Mid ≥$2B</span>
+    <span class="k"><span class="sw" style="background:var(--mc-small)"></span>Small ≥$300M</span>
+    <span class="k"><span class="sw" style="background:var(--mc-micro)"></span>Micro / —</span>
+  </div>
   <div class="card tablecard"><table>
     <thead><tr>
-      <th>Filed</th><th>Trade</th><th>Ticker / Mkt Cap</th><th>Company</th><th>Insider</th><th>Title</th>
-      <th>AI</th><th class="n">Price</th><th class="n">Qty</th><th class="n">Value</th><th class="n">Owned After</th>
+      <th>Latest Filed</th><th>Ticker / Mkt Cap</th><th>Company</th>
+      <th class="n">Insiders</th><th class="n">Buys</th><th>AI</th>
+      <th class="n">Avg Price</th><th class="n">Total Qty</th><th class="n">Total Value</th>
     </tr></thead>
     <tbody>
       {% for r in rows %}
-      <tr class="buy">
+      <tr class="buy {{ mcap_tier(r.eff_mktcap) }}">
         <td class="dim">{{ r.filing_date }}</td>
-        <td class="dim">{{ r.trade_date or "" }}</td>
         <td class="tk">
           <span class="ticker">{{ r.ticker or "—" }}</span>
-          <span class="mcap">{{ bcap(r.effective_market_cap if r.effective_market_cap is not none else r.market_cap) }}</span>
+          <span class="mcap">{{ bcap(r.eff_mktcap) }}</span>
         </td>
         <td class="co">{{ r.company_name }}</td>
-        <td>{{ r.insider_name }}</td>
-        <td class="dim">{{ r.insider_title }}</td>
+        <td class="n">{{ "{:,}".format(r.insider_count) }}</td>
+        <td class="n">{{ "{:,}".format(r.buy_count) }}</td>
         <td>
           {% if r.ai_score is not none %}
           <span class="ai {{ 'hi' if r.ai_score >= 70 else 'mid' if r.ai_score >= 40 else 'lo' }}" title="{{ r.ai_rating }}: {{ r.ai_comment }}">{{ r.ai_score }}</span>
           {% else %}<span class="dim">—</span>{% endif %}
         </td>
-        <td class="n">{{ "${:.2f}".format(r.price) if r.price is not none else "" }}</td>
+        <td class="n">{{ "${:.2f}".format(r.avg_price) if r.avg_price is not none else "" }}</td>
         <td class="n">{{ "{:,.0f}".format(r.shares) if r.shares is not none else "" }}</td>
         <td class="n val">{{ money(r.value) if r.value is not none else "" }}</td>
-        <td class="n dim">{{ "{:,.0f}".format(r.shares_owned_after) if r.shares_owned_after is not none else "" }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="11" class="empty">No transactions. Run <code>python -m scraper.ingest &lt;date&gt;</code> to load data.</td></tr>
+      <tr><td colspan="9" class="empty">No transactions. Run <code>python -m scraper.ingest &lt;date&gt;</code> to load data.</td></tr>
       {% endfor %}
     </tbody>
   </table></div>
