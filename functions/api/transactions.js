@@ -6,6 +6,10 @@ export function onRequestGet(context) {
   const filters = parseFilters(url);
   return serveCached(context, "application/json; charset=utf-8", async () => {
     const rows = await queryTransactions(context.env.DB, filters);
-    return JSON.stringify(rows);
+    // Expose one market_cap: the effective (company-level, else per-row) value
+    // the page renders. Dropping the raw column avoids two conflicting fields.
+    return JSON.stringify(
+      rows.map(({ eff_mktcap, ...r }) => ({ ...r, market_cap: eff_mktcap }))
+    );
   });
 }
