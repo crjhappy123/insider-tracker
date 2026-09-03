@@ -54,9 +54,16 @@ _RESPONSE_SCHEMA = {
                     "id": {"type": "STRING"},
                     "score": {"type": "INTEGER"},
                     "rating": {"type": "STRING"},
-                    "comment": {"type": "STRING"},
+                    # Four separate analysis sections, each a bullet list.
+                    "fundamental": {"type": "STRING"},
+                    "technical": {"type": "STRING"},
+                    "capital": {"type": "STRING"},
+                    "summary": {"type": "STRING"},
                 },
-                "required": ["id", "score", "rating", "comment"],
+                "required": [
+                    "id", "score", "rating",
+                    "fundamental", "technical", "capital", "summary",
+                ],
             },
         },
     },
@@ -65,25 +72,46 @@ _RESPONSE_SCHEMA = {
 
 _INSTRUCTIONS = (
     "These are U.S. companies where a corporate insider made an open-market "
-    "purchase (SEC Form 4, code P) — treat the insider buy ONLY as the watchlist "
-    "filter, NOT as a scoring input. You are a fundamental equity analyst. "
-    "Respond in SIMPLIFIED CHINESE (简体中文) for the `report` and every `comment`.\n"
-    "For EACH company:\n"
-    "- Give a 0-100 `score` reflecting the company's INVESTMENT ATTRACTIVENESS "
-    "based ONLY on FUNDAMENTALS and INDUSTRY/SECTOR analysis: valuation, revenue/"
-    "earnings growth, profitability & margins, balance-sheet health, competitive "
-    "moat, and the outlook for its industry. Do NOT let the insider purchase, its "
-    "size, or the buyer's title affect the score. Use your knowledge of the "
-    "company; if you don't know it well, score conservatively and say so.\n"
-    "- `rating` must be exactly one of 强 / 中等 / 弱.\n"
-    "- `comment`: 2-3 Chinese sentences on the fundamental + industry thesis "
-    "(the basis for the score); you may add one clause on the provided "
-    "`technicals` (price vs. 50/200-day MA, 52-week range, momentum) for timing "
-    "context only.\n"
-    "Then write `report`: a SHORT 1-2 sentence Chinese intro summarizing the "
-    "day's fundamentally strongest names.\n"
+    "purchase (SEC Form 4, code P). You are a fundamental equity analyst. "
+    "Respond in SIMPLIFIED CHINESE (简体中文) for the `report` and every section.\n"
+    "For EACH company return a 0-100 `score` for INVESTMENT ATTRACTIVENESS based "
+    "ONLY on FUNDAMENTALS and INDUSTRY/SECTOR (valuation, revenue/earnings growth, "
+    "profitability & margins, balance-sheet health, competitive moat, industry "
+    "outlook). Do NOT let the insider purchase, its size, or the buyer's title "
+    "affect the score. If you don't know the company well, score conservatively "
+    "and say so. `rating` must be exactly one of 强 / 中等 / 弱.\n"
+    "Then write FOUR separate sections. Each MUST be formatted as bullet points — "
+    "one point per line, each line starting with '• '. Keep each section to 2-3 "
+    "concise bullets:\n"
+    "- `fundamental` 基本面: valuation, growth, margins, balance sheet, moat, "
+    "industry outlook (this is the basis for the score).\n"
+    "- `technical` 技术面: read the provided `technicals` — price vs 50/200-day MA, "
+    "position in the 52-week range, 1M/3M momentum. If technicals are missing, say "
+    "数据缺失.\n"
+    "- `capital` 资金面: interpret the insider open-market buy as a capital-flow "
+    "signal — the buy size (`buy_value`), the buyer's role (`insider_title`), and "
+    "recent momentum as a flow proxy. Context/timing only, NOT part of the score.\n"
+    "- `summary` 总结: 1-2 bullets with the overall take and the key risk.\n"
+    "Then write `report`: a SHORT 1-2 sentence Chinese intro summarizing the day's "
+    "fundamentally strongest names.\n"
     "仅供参考，非投资建议。"
 )
+
+
+def _format_comment(p: dict) -> str:
+    """Assemble the four returned sections into one labeled, bulleted comment."""
+    sections = [
+        ("基本面", p.get("fundamental")),
+        ("技术面", p.get("technical")),
+        ("资金面", p.get("capital")),
+        ("总结", p.get("summary")),
+    ]
+    blocks = [
+        f"【{title}】\n{body.strip()}"
+        for title, body in sections
+        if body and body.strip()
+    ]
+    return "\n\n".join(blocks)
 
 
 def _scored_buys(day: date) -> list[dict]:
@@ -110,6 +138,9 @@ def _scored_buys(day: date) -> list[dict]:
                     "ticker": t.ticker,
                     "company": t.company_name,
                     "market_cap": mktcap,
+                    # Insider-buy context for the 资金面 (capital-flow) section.
+                    "buy_value": t.value,
+                    "insider_title": t.insider_title,
                     "technicals": get_technicals(t.ticker),
                 }
             )
@@ -203,7 +234,7 @@ def generate(day: date) -> int:
                     line_no=int(line),
                     score=p.get("score"),
                     rating=p.get("rating"),
-                    comment=p.get("comment"),
+                    comment=_format_comment(p),
                     created_at=datetime.utcnow(),
                 )
                 .on_conflict_do_update(
@@ -211,7 +242,7 @@ def generate(day: date) -> int:
                     set_={
                         "score": p.get("score"),
                         "rating": p.get("rating"),
-                        "comment": p.get("comment"),
+                        "comment": _format_comment(p),
                     },
                 )
             )

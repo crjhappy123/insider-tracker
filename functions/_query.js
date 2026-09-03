@@ -499,7 +499,7 @@ tbody tr.buy td:first-child{box-shadow:inset 3px 0 0 var(--buy)}
 .pick-head{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.3rem}
 .pick-co{font-size:.82rem;color:var(--ink2)}
 .pick-rating{font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
-.pick-comment{font-size:.85rem;line-height:1.45;color:var(--ink)}
+.pick-comment{font-size:.85rem;line-height:1.5;color:var(--ink);white-space:pre-wrap}
 .ai{display:inline-block;min-width:1.8rem;text-align:center;padding:.1rem .4rem;border-radius:6px;
   font-weight:700;font-size:.72rem;cursor:help}
 .ai.hi{color:var(--buy);background:color-mix(in srgb,var(--buy) 18%,transparent)}
