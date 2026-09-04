@@ -2,12 +2,18 @@ name: Daily EDGAR ingest → D1
 
 on:
   schedule:
-    # 07:00 UTC daily; ingests the previous calendar day's Form 4 filings.
-    - cron: "0 7 * * *"
+    # Twice daily (UTC). SEC's daily master index for a trading day is only
+    # finalized ~22:00 ET, so we run:
+    #   03:00 UTC — after the US close + index finalize (~22:00 ET): captures
+    #               the day that just closed, same evening for US users.
+    #   13:00 UTC — before the US open (~08:00 ET): refresh + self-heal any
+    #               filings that landed late overnight.
+    - cron: "0 3 * * *"
+    - cron: "0 13 * * *"
   workflow_dispatch: # allow manual runs
     inputs:
       date:
-        description: "Date to ingest (YYYY-MM-DD). Defaults to yesterday."
+        description: "Date to ingest (YYYY-MM-DD). Defaults to yesterday→today."
         required: false
 
 jobs:
@@ -27,11 +33,24 @@ jobs:
         env:
           EDGAR_USER_AGENT: ${{ secrets.EDGAR_USER_AGENT }}
         run: |
-          DAY="${{ github.event.inputs.date }}"
-          [ -z "$DAY" ] && DAY="$(date -u -d 'yesterday' +%F)"
+          MANUAL="${{ github.event.inputs.date }}"
+          if [ -n "$MANUAL" ]; then
+            START="$MANUAL"; END="$MANUAL"
+          else
+            # Ingest yesterday→today so a run always self-heals the prior day
+            # and picks up today's filings as soon as its index is available.
+            START="$(date -u -d 'yesterday' +%F)"; END="$(date -u +%F)"
+          fi
+          echo "Ingesting $START..$END"
+          python -m scraper.ingest "$START" "$END"
+          # Target the freshest day actually present (manual run → that date).
+          if [ -n "$MANUAL" ]; then
+            DAY="$MANUAL"
+          else
+            DAY="$(python -c "import sqlite3; print(sqlite3.connect('insider.db').execute('select max(filing_date) from transactions').fetchone()[0] or '')")"
+          fi
           echo "DAY=$DAY" >> "$GITHUB_ENV"
-          echo "Ingesting $DAY"
-          python -m scraper.ingest "$DAY"
+          echo "Freshest day in DB: $DAY"
 
       - name: Push transactions to D1
         env:
@@ -45,7 +64,9 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
-        run: python -m scraper.ai_report "$DAY"
+        run: |
+          if [ -z "$DAY" ]; then echo "No data ingested; skipping AI report"; exit 0; fi
+          python -m scraper.ai_report "$DAY"
 
       - name: Push AI report + scores to D1
         env:

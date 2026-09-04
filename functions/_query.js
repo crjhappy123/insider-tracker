@@ -687,7 +687,9 @@ ${renderBoards(boards)}
   <a class="reset" href="/">reset</a>
 </form>
 
-<div class="count">${num(s.companies)} companies · ${num(s.buys)} buys</div>
+<div class="count">${num(s.companies)} companies · ${num(s.buys)} buys${
+  rows.length ? ` · data through ${esc(rows.reduce((m, r) => (r.filing_date > m ? r.filing_date : m), rows[0].filing_date))}` : ""
+} · updated 2×/day from SEC EDGAR</div>
 <div class="legend">
   <span class="k"><span class="sw" style="background:var(--mc-mega)"></span>Mega ≥$200B</span>
   <span class="k"><span class="sw" style="background:var(--mc-large)"></span>Large ≥$10B</span>

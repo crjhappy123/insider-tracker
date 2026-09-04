@@ -248,7 +248,7 @@
     <a class="reset" href="/">reset</a>
   </form>
 
-  <div class="count">{{ "{:,}".format(stats.companies) }} companies · {{ "{:,}".format(stats.buys) }} buys</div>
+  <div class="count">{{ "{:,}".format(stats.companies) }} companies · {{ "{:,}".format(stats.buys) }} buys{% if rows %} · data through {{ rows[0].filing_date }}{% endif %} · updated 2×/day from SEC EDGAR</div>
   <div class="legend">
     <span class="k"><span class="sw" style="background:var(--mc-mega)"></span>Mega ≥$200B</span>
     <span class="k"><span class="sw" style="background:var(--mc-large)"></span>Large ≥$10B</span>
