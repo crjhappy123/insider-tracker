@@ -151,6 +151,10 @@
     .legend{display:flex;gap:.9rem;flex-wrap:wrap;font-size:.68rem;color:var(--muted);margin:.2rem 0 .6rem}
     .legend .k{display:inline-flex;align-items:center;gap:.3rem}
     .legend .sw{width:.7rem;height:.7rem;border-radius:2px;display:inline-block}
+    .disclaimer{margin-top:1.4rem;padding:1.1rem 1.25rem;font-size:.72rem;line-height:1.6;color:var(--muted)}
+    .disclaimer b{color:var(--ink2);display:block;text-transform:uppercase;letter-spacing:.08em;font-size:.68rem;margin-bottom:.4rem}
+    .disclaimer p{margin:0 0 .5rem}
+    .disclaimer p:last-child{margin:0}
   </style>
 </head>
 <body><div class="wrap">
@@ -284,6 +288,13 @@
       {% endfor %}
     </tbody>
   </table></div>
+
+  <footer class="card disclaimer">
+    <b>Disclaimer</b>
+    <p>Data is sourced from public <strong>Form 4</strong> filings on the U.S. SEC EDGAR system and is provided for informational purposes only. Form 4 filings are lawful, publicly required disclosures of insider transactions — not confidential or illegal insider information.</p>
+    <p>Nothing on this site — including AI-generated scores, ratings, or commentary — constitutes investment advice, a recommendation, or an offer to buy or sell any security, and does not represent the views of this site. Market caps and other figures are estimates and may be delayed or inaccurate; we make no warranty as to their accuracy, completeness, or timeliness.</p>
+    <p>Investing involves risk. Do your own research and make your own decisions. This site is not affiliated with the SEC or any brokerage, and is not liable for any losses arising from use of the information provided here.</p>
+  </footer>
 </div>
 <script>
 (function(){
