@@ -5,6 +5,70 @@
 // or below this. The "Min mkt cap" filter can only raise it, never lower it.
 const MIN_DISPLAY_MKTCAP = 1e9; // $1B
 
+// Client-side enhancements (no framework): theme toggle, clickable column
+// sorting, AI-detail disclosure rows, and zebra striping that survives sorting.
+const PAGE_SCRIPT = `<script>
+(function(){
+  // Theme toggle (persisted; initial theme applied by the inline <head> script).
+  var btn=document.getElementById('themeBtn');
+  if(btn)btn.addEventListener('click',function(){
+    var el=document.documentElement, cur=el.getAttribute('data-theme');
+    if(!cur)cur=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';
+    var next=cur==='dark'?'light':'dark';
+    el.setAttribute('data-theme',next);
+    try{localStorage.setItem('theme',next);}catch(e){}
+  });
+
+  var tbody=document.querySelector('table tbody');
+  if(!tbody)return;
+
+  // Pair each main row with its (optional) detail row so they move together.
+  Array.prototype.forEach.call(tbody.querySelectorAll('tr.detail'),function(d){
+    var prev=d.previousElementSibling; if(prev)prev._detail=d;
+  });
+
+  function mainRows(){
+    return Array.prototype.filter.call(tbody.children,function(r){
+      return !r.classList.contains('detail') && !r.querySelector('.empty');
+    });
+  }
+  function stripe(){ mainRows().forEach(function(r,i){ r.classList.toggle('alt', i%2===1); }); }
+
+  // Click an AI pill to expand/collapse its detail row.
+  tbody.addEventListener('click',function(e){
+    var pill=e.target.closest('.ai[data-detail]'); if(!pill)return;
+    var d=pill.closest('tr')._detail;
+    if(d){ d.hidden=!d.hidden; pill.classList.toggle('open',!d.hidden); }
+  });
+
+  // Sortable headers.
+  var ths=[].slice.call(document.querySelectorAll('thead th[data-type]'));
+  function val(tr,idx,type){
+    var td=tr.children[idx]; if(!td)return type==='num'?-Infinity:'';
+    if(type==='num'){
+      var dv=td.getAttribute('data-v');
+      var n=dv!==null?parseFloat(dv):parseFloat((td.textContent||'').replace(/[^0-9.\\-]/g,''));
+      return isNaN(n)?-Infinity:n;
+    }
+    return (td.textContent||'').trim().toLowerCase();
+  }
+  ths.forEach(function(th){
+    th.addEventListener('click',function(){
+      var idx=[].indexOf.call(th.parentNode.children,th), type=th.dataset.type;
+      var asc=th.dataset.dir!=='asc';
+      ths.forEach(function(o){ if(o!==th)o.removeAttribute('data-dir'); });
+      th.dataset.dir=asc?'asc':'desc';
+      mainRows().sort(function(a,b){
+        var x=val(a,idx,type),y=val(b,idx,type);
+        return (x<y?-1:x>y?1:0)*(asc?1:-1);
+      }).forEach(function(r){ tbody.appendChild(r); if(r._detail)tbody.appendChild(r._detail); });
+      stripe();
+    });
+  });
+  stripe();
+})();
+</script>`;
+
 // Parse filter params from the request URL, coercing blanks to null.
 export function parseFilters(url) {
   const g = (k) => {
@@ -309,15 +373,11 @@ function computeStats(rows) {
 
 // One leaderboard row: rank, ticker, company, score pill, total bought.
 function boardRow(r, i) {
-  const s = Number(r.score);
-  const cls = s >= 70 ? "hi" : s >= 40 ? "mid" : "lo";
   return `<div class="lb-row">
     <span class="lb-rank">${i + 1}</span>
     <span class="ticker">${esc(r.ticker || "—")}</span>
     <span class="lb-co">${esc(r.company_name || "")}</span>
-    <span class="ai ${cls}" title="${esc(r.rating || "")}: ${esc(
-    r.comment || ""
-  )}">${s}</span>
+    ${aiPill(r.score, { rating: r.rating, comment: r.comment })}
     <span class="lb-val">${money(r.value)}</span>
   </div>`;
 }
@@ -344,14 +404,26 @@ function renderBoards(boards) {
   </section>`;
 }
 
-// AI score pill (color by conviction) + comment on hover.
-function aiCell(r) {
-  if (r.ai_score == null) return `<span class="dim">—</span>`;
-  const s = Number(r.ai_score);
+// AI score pill: color by conviction + a mini progress bar (score/100).
+// `detail` makes it a clickable disclosure (caret) for the table's expand row.
+function aiPill(score, { rating, comment, detail } = {}) {
+  if (score == null || score === "") return `<span class="dim">—</span>`;
+  const s = Number(score);
   const cls = s >= 70 ? "hi" : s >= 40 ? "mid" : "lo";
-  return `<span class="ai ${cls}" title="${esc(r.ai_rating || "")}: ${esc(
-    r.ai_comment || ""
-  )}">${s}</span>`;
+  const w = Math.max(0, Math.min(100, s));
+  const title = esc(`${rating || ""}${rating ? ": " : ""}${comment || ""}`);
+  return `<span class="ai ${cls}"${detail ? " data-detail" : ""} title="${title}">` +
+    `<span class="ai-n">${s}</span>` +
+    `<span class="ai-bar"><span style="width:${w}%"></span></span></span>`;
+}
+
+// Table AI cell: pill + click-to-expand detail (rendered as a sibling row).
+function aiCell(r) {
+  return aiPill(r.ai_score, {
+    rating: r.ai_rating,
+    comment: r.ai_comment,
+    detail: r.ai_score != null && !!r.ai_comment,
+  });
 }
 
 function tile(label, value, accentVar, sub) {
@@ -369,33 +441,36 @@ export function renderPage(rows, f, report, boards) {
   const bodyRows = rows.length
     ? rows
         .map((r) => {
+          const detail =
+            r.ai_score != null && r.ai_comment
+              ? `<tr class="detail" hidden><td colspan="9">` +
+                `<span class="r">${esc(r.ai_rating || "AI")}</span>${esc(r.ai_comment)}</td></tr>`
+              : "";
           return `<tr class="buy ${mcapTier(r.eff_mktcap)}">
             <td class="dim">${esc(r.filing_date)}</td>
-            <td class="tk">
+            <td class="tk" data-v="${r.eff_mktcap ?? -1}">
               <span class="ticker">${esc(r.ticker || "—")}</span>
               <span class="mcap">${bcap(r.eff_mktcap)}</span>
             </td>
             <td class="co">${esc(r.company_name)}</td>
-            <td class="n">${num(r.insider_count)}</td>
-            <td class="n">${num(r.buy_count)}</td>
-            <td>${aiCell(r)}</td>
-            <td class="n">${r.avg_price != null ? "$" + Number(r.avg_price).toFixed(2) : ""}</td>
-            <td class="n">${num(r.shares)}</td>
-            <td class="n val">${r.value != null ? money(r.value) : ""}</td>
-          </tr>`;
+            <td class="n" data-v="${r.insider_count ?? 0}">${num(r.insider_count)}</td>
+            <td class="n" data-v="${r.buy_count ?? 0}">${num(r.buy_count)}</td>
+            <td data-v="${r.ai_score ?? -1}">${aiCell(r)}</td>
+            <td class="n" data-v="${r.avg_price ?? -1}">${r.avg_price != null ? "$" + Number(r.avg_price).toFixed(2) : ""}</td>
+            <td class="n" data-v="${r.shares ?? -1}">${num(r.shares)}</td>
+            <td class="n val" data-v="${r.value ?? -1}">${r.value != null ? money(r.value) : ""}</td>
+          </tr>${detail}`;
         })
         .join("")
     : `<tr><td colspan="9" class="empty">No transactions match your filters.</td></tr>`;
 
   const pickBlocks = (report && report.picks ? report.picks : [])
     .map((p) => {
-      const sc = p.score == null ? "" : Number(p.score);
-      const cls = sc >= 70 ? "hi" : sc >= 40 ? "mid" : "lo";
       return `<div class="pick">
         <div class="pick-head">
           <span class="ticker">${esc(p.ticker || "—")}</span>
           <span class="pick-co">${esc(p.company_name || "")}</span>
-          ${sc === "" ? "" : `<span class="ai ${cls}">${sc}</span>`}
+          ${aiPill(p.score, { rating: p.rating, comment: p.comment })}
           ${p.rating ? `<span class="pick-rating">${esc(p.rating)}</span>` : ""}
         </div>
         <div class="pick-comment">${esc(p.comment || "")}</div>
@@ -420,12 +495,13 @@ export function renderPage(rows, f, report, boards) {
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Insider Tracker · SEC Form 4</title>
+<script>try{var t=localStorage.getItem('theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
 <style>
 :root{
   color-scheme:dark;
   --plane:#0d0d0d; --surface:#1a1a19; --glass:rgba(255,255,255,.04);
   --ink:#fff; --ink2:#c3c2b7; --muted:#898781;
-  --border:rgba(255,255,255,.10);
+  --border:rgba(255,255,255,.10); --zebra:rgba(255,255,255,.028);
   --buy:#0ca30c; --sell:#d03b3b; --accent:#3987e5;
 }
 @media (prefers-color-scheme:light){
@@ -433,9 +509,24 @@ export function renderPage(rows, f, report, boards) {
     color-scheme:light;
     --plane:#f4f4f1; --surface:#fcfcfb; --glass:rgba(11,11,11,.03);
     --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
-    --border:rgba(11,11,11,.10);
+    --border:rgba(11,11,11,.10); --zebra:rgba(11,11,11,.035);
     --buy:#0a850a; --sell:#c02525; --accent:#2a78d6;
   }
+}
+/* explicit theme override (toggle button); beats the media query by specificity */
+html[data-theme="dark"]{
+  color-scheme:dark;
+  --plane:#0d0d0d; --surface:#1a1a19; --glass:rgba(255,255,255,.04);
+  --ink:#fff; --ink2:#c3c2b7; --muted:#898781;
+  --border:rgba(255,255,255,.10); --zebra:rgba(255,255,255,.028);
+  --buy:#0ca30c; --sell:#d03b3b; --accent:#3987e5;
+}
+html[data-theme="light"]{
+  color-scheme:light;
+  --plane:#f4f4f1; --surface:#fcfcfb; --glass:rgba(11,11,11,.03);
+  --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+  --border:rgba(11,11,11,.10); --zebra:rgba(11,11,11,.035);
+  --buy:#0a850a; --sell:#c02525; --accent:#2a78d6;
 }
 *{box-sizing:border-box}
 body{
@@ -452,6 +543,9 @@ header{display:flex;align-items:baseline;gap:.8rem;flex-wrap:wrap;margin-bottom:
 .dot{width:.7rem;height:.7rem;border-radius:50%;background:var(--accent);
   box-shadow:0 0 0 4px rgba(57,135,229,.18),0 0 16px 2px var(--accent)}
 .tag{color:var(--muted);font-size:.82rem}
+.theme-btn{margin-left:auto;background:var(--surface);color:var(--ink2);border:1px solid var(--border);
+  border-radius:10px;padding:.4rem .6rem;font-size:1rem;line-height:1;cursor:pointer}
+.theme-btn:hover{color:var(--ink);border-color:var(--accent)}
 .card{background:var(--glass);border:1px solid var(--border);border-radius:16px;
   backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
 /* KPI tiles */
@@ -479,8 +573,15 @@ table{border-collapse:collapse;width:100%;font-size:.82rem}
 th,td{padding:.55rem .7rem;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border)}
 thead th{position:sticky;top:0;background:var(--surface);z-index:1;color:var(--muted);
   font-size:.68rem;letter-spacing:.07em;text-transform:uppercase;font-weight:600}
+thead th[data-type]{cursor:pointer;user-select:none}
+thead th[data-type]:hover{color:var(--ink)}
+thead th[data-type]::after{content:"↕";margin-left:.3rem;opacity:.35;font-size:.62rem}
+thead th[data-dir=asc]::after{content:"▲";opacity:.9}
+thead th[data-dir=desc]::after{content:"▼";opacity:.9}
 tbody tr{transition:filter .12s}
 tbody tr:hover{filter:brightness(1.22)}
+/* zebra striping (JS-tagged so it survives sorting & detail rows) */
+tbody tr.alt td{background-image:linear-gradient(var(--zebra),var(--zebra))}
 td.n{text-align:right;font-variant-numeric:tabular-nums}
 td.dim{color:var(--muted)}
 td.co{max-width:220px;overflow:hidden;text-overflow:ellipsis}
@@ -502,11 +603,22 @@ tbody tr.buy td:first-child{box-shadow:inset 3px 0 0 var(--buy)}
 .pick-co{font-size:.82rem;color:var(--ink2)}
 .pick-rating{font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 .pick-comment{font-size:.85rem;line-height:1.5;color:var(--ink);white-space:pre-wrap}
-.ai{display:inline-block;min-width:1.8rem;text-align:center;padding:.1rem .4rem;border-radius:6px;
-  font-weight:700;font-size:.72rem;cursor:help}
+.ai{display:inline-flex;align-items:center;gap:.35rem;padding:.12rem .45rem;border-radius:6px;
+  font-weight:700;font-size:.72rem;cursor:help;vertical-align:middle}
+.ai .ai-n{min-width:1.3rem;text-align:center;font-variant-numeric:tabular-nums}
+.ai .ai-bar{width:2.1rem;height:.32rem;border-radius:3px;background:color-mix(in srgb,currentColor 22%,transparent);overflow:hidden}
+.ai .ai-bar>span{display:block;height:100%;background:currentColor;border-radius:3px}
 .ai.hi{color:var(--buy);background:color-mix(in srgb,var(--buy) 18%,transparent)}
 .ai.mid{color:var(--accent);background:color-mix(in srgb,var(--accent) 16%,transparent)}
 .ai.lo{color:var(--muted);background:var(--glass)}
+/* clickable AI pill that expands a detail row (mobile-friendly, no hover needed) */
+.ai[data-detail]{cursor:pointer}
+.ai[data-detail]::after{content:"›";opacity:.55;transition:transform .15s;display:inline-block}
+.ai[data-detail].open::after{transform:rotate(90deg)}
+tr.detail>td{white-space:normal;background:var(--surface);color:var(--ink2);
+  font-size:.8rem;line-height:1.5;padding:.55rem .95rem}
+tr.detail .r{color:var(--ink);font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+  font-size:.68rem;margin-right:.5rem}
 /* AI leaderboard (pure-CSS tabs) */
 .lb{padding:1.1rem 1.25rem;margin-bottom:1.1rem}
 .lb>input{position:absolute;opacity:0;pointer-events:none}
@@ -546,6 +658,7 @@ tbody tr.mc-mid   .mcap{color:var(--mc-mid)}
 <header>
   <div class="logo"><span class="dot"></span>Insider Tracker</div>
   <span class="tag">SEC Form 4 · insider open-market purchases</span>
+  <button class="theme-btn" id="themeBtn" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">🌗</button>
 </header>
 
 ${reportCard}
@@ -579,9 +692,10 @@ ${renderBoards(boards)}
   <span class="k"><span class="sw" style="background:var(--mc-micro)"></span>Micro / —</span>
 </div>
 <div class="card tablecard"><table><thead><tr>
-<th>Latest Filed</th><th>Ticker / Mkt Cap</th><th>Company</th>
-<th class="n">Insiders</th><th class="n">Buys</th><th>AI</th>
-<th class="n">Avg Price</th><th class="n">Total Qty</th><th class="n">Total Value</th>
+<th data-type="text">Latest Filed</th><th data-type="num">Ticker / Mkt Cap</th><th data-type="text">Company</th>
+<th class="n" data-type="num">Insiders</th><th class="n" data-type="num">Buys</th><th data-type="num">AI</th>
+<th class="n" data-type="num">Avg Price</th><th class="n" data-type="num">Total Qty</th><th class="n" data-type="num">Total Value</th>
 </tr></thead><tbody>${bodyRows}</tbody></table></div>
+${PAGE_SCRIPT}
 </div></body></html>`;
 }
