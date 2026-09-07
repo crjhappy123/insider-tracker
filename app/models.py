@@ -104,3 +104,28 @@ class AiScore(Base):
     rating: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     comment: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Leaderboard(Base):
+    """Durable AI leaderboard membership: one row per ticker ever picked.
+
+    Unlike transactions/ai_scores (pruned to a rolling window), these rows
+    persist, so they can back the quarterly/yearly boards and track each pick's
+    performance since it was first added. first_added_date/entry_price are set
+    once; current_price is refreshed on every maintenance run.
+    """
+
+    __tablename__ = "leaderboard"
+
+    ticker: Mapped[str] = mapped_column(String(16), primary_key=True)
+    company_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    first_added_date: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    last_seen_date: Mapped[Optional[str]] = mapped_column(String(10), index=True, nullable=True)
+    entry_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    current_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    best_score: Mapped[Optional[int]] = mapped_column(Integer, index=True, nullable=True)
+    best_rating: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    best_comment: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    total_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    price_updated_at: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

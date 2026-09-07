@@ -201,52 +201,69 @@ export async function queryTickerRollup(db, f) {
   return results || [];
 }
 
-// AI score leaderboards: daily (latest scored day) and weekly (whole window).
-// Dedupe by ticker keeping its highest score; sum the ticker's buy value in scope.
+// AI leaderboards over four windows (daily / weekly / quarterly / yearly), read
+// from the durable `leaderboard` table so quarterly/yearly survive the prune.
+// Each board = rows whose last_seen_date falls in the window, ranked by best
+// score, carrying first-added date, entry price, current price, and gain since.
+const BOARD_WINDOWS = { daily: 0, weekly: 7, quarterly: 90, yearly: 365 };
+
 export async function leaderboards(db) {
   try {
     const { results } = await db
-      .prepare(
-        "SELECT t.filing_date, t.ticker, t.company_name, t.value, " +
-          "a.score, a.rating, a.comment " +
-          "FROM ai_scores a " +
-          "JOIN transactions t ON t.accession_no = a.accession_no AND t.line_no = a.line_no " +
-          "WHERE a.score IS NOT NULL ORDER BY a.score DESC"
-      )
+      .prepare("SELECT * FROM leaderboard WHERE best_score IS NOT NULL")
       .all();
     const rows = results || [];
-    if (!rows.length) return { daily: [], weekly: [] };
-    const latest = rows.reduce((m, r) => (r.filing_date > m ? r.filing_date : m), "");
+    if (!rows.length) return { daily: [], weekly: [], quarterly: [], yearly: [] };
+
+    // Anchor windows to the most recent day any pick was seen (data day, not now).
+    const latest = rows.reduce(
+      (m, r) => (r.last_seen_date > m ? r.last_seen_date : m),
+      ""
+    );
+    const cutoff = (days) => {
+      const d = new Date(latest + "T00:00:00Z");
+      d.setUTCDate(d.getUTCDate() - days);
+      return d.toISOString().slice(0, 10);
+    };
+    const board = (days) =>
+      rankBoard(
+        days === 0
+          ? rows.filter((r) => r.last_seen_date === latest)
+          : rows.filter((r) => r.last_seen_date >= cutoff(days))
+      );
     return {
-      daily: rankBoard(rows.filter((r) => r.filing_date === latest)),
-      weekly: rankBoard(rows),
+      daily: board(BOARD_WINDOWS.daily),
+      weekly: board(BOARD_WINDOWS.weekly),
+      quarterly: board(BOARD_WINDOWS.quarterly),
+      yearly: board(BOARD_WINDOWS.yearly),
     };
   } catch {
-    return { daily: [], weekly: [] };
+    return { daily: [], weekly: [], quarterly: [], yearly: [] };
   }
 }
 
-// Collapse score-desc rows to one entry per ticker (best score wins), sum value.
+// Rank leaderboard rows by best score (top 15) and compute gain since entry.
 function rankBoard(rows) {
-  const byTicker = new Map();
-  for (const r of rows) {
-    const key = r.ticker || r.company_name;
-    if (!byTicker.has(key)) {
-      byTicker.set(key, {
+  return [...rows]
+    .sort((a, b) => (b.best_score || 0) - (a.best_score || 0))
+    .slice(0, 15)
+    .map((r) => {
+      const entry = r.entry_price != null ? Number(r.entry_price) : null;
+      const cur = r.current_price != null ? Number(r.current_price) : null;
+      const gain = entry && cur ? (cur / entry - 1) * 100 : null;
+      return {
         ticker: r.ticker,
         company_name: r.company_name,
-        score: r.score,
-        rating: r.rating,
-        comment: r.comment,
-        value: 0,
-        buys: 0,
-      });
-    }
-    const e = byTicker.get(key);
-    e.value += Number(r.value) || 0;
-    e.buys += 1;
-  }
-  return [...byTicker.values()].sort((a, b) => b.score - a.score).slice(0, 15);
+        score: r.best_score,
+        rating: r.best_rating,
+        comment: r.best_comment,
+        value: r.total_value,
+        first_added: r.first_added_date,
+        entry_price: entry,
+        current_price: cur,
+        gain,
+      };
+    });
 }
 
 // Latest AI daily report — but ONLY if it covers the most recent data day.
@@ -371,36 +388,68 @@ function computeStats(rows) {
   return { companies: rows.length, buys, buyValue, maxBuy, maxTicker };
 }
 
-// One leaderboard row: rank, ticker, company, score pill, total bought.
+// Signed percent gain, colored (green up / red down). "—" when unknown.
+function gainCell(g) {
+  if (g == null || !isFinite(g)) return `<span class="lb-gain dim">—</span>`;
+  const cls = g >= 0 ? "up" : "down";
+  const sign = g >= 0 ? "+" : "";
+  return `<span class="lb-gain ${cls}">${sign}${g.toFixed(1)}%</span>`;
+}
+
+function px(v) {
+  return v == null ? "—" : `$${Number(v).toFixed(2)}`;
+}
+
+// One leaderboard row: rank, ticker/company, score pill, entry (date + price),
+// current price, gain-since-entry, total bought.
 function boardRow(r, i) {
   return `<div class="lb-row">
     <span class="lb-rank">${i + 1}</span>
-    <span class="ticker">${esc(r.ticker || "—")}</span>
-    <span class="lb-co">${esc(r.company_name || "")}</span>
+    <span class="lb-tk"><span class="ticker">${esc(r.ticker || "—")}</span>
+      <span class="lb-co">${esc(r.company_name || "")}</span></span>
     ${aiPill(r.score, { rating: r.rating, comment: r.comment })}
+    <span class="lb-entry"><span class="lb-px">${px(r.entry_price)}</span>
+      <span class="lb-date">${esc(r.first_added || "")}</span></span>
+    <span class="lb-px">${px(r.current_price)}</span>
+    ${gainCell(r.gain)}
     <span class="lb-val">${money(r.value)}</span>
   </div>`;
 }
 
-// Daily/weekly AI leaderboards as a pure-CSS tabbed card (no client JS).
+// AI leaderboards (daily/weekly/quarterly/yearly) as a pure-CSS tabbed card.
 function renderBoards(boards) {
-  if (!boards || (!boards.daily.length && !boards.weekly.length)) return "";
+  const tabs = [
+    ["daily", "d", "Daily", "日"],
+    ["weekly", "w", "Weekly", "周"],
+    ["quarterly", "q", "Quarterly", "季"],
+    ["yearly", "y", "Yearly", "年"],
+  ];
+  if (!boards || !tabs.some(([k]) => boards[k] && boards[k].length)) return "";
+  const header = `<div class="lb-row lb-colhead">
+    <span class="lb-rank">#</span><span class="lb-tk">Ticker</span>
+    <span>AI</span><span class="lb-entry">Entry / Date</span>
+    <span class="lb-px">Now</span><span class="lb-gain">Gain</span>
+    <span class="lb-val">Bought</span></div>`;
   const list = (rows) =>
-    rows.length
-      ? rows.map(boardRow).join("")
+    rows && rows.length
+      ? header + rows.map(boardRow).join("")
       : `<div class="empty">No scored buys yet.</div>`;
+  const inputs = tabs
+    .map(([k, s], i) => `<input type="radio" name="lbtab" id="lb-${s}"${i === 0 ? " checked" : ""}>`)
+    .join("");
+  const labels = tabs
+    .map(([k, s, en]) => `<label for="lb-${s}" class="lb-tab lb-tab-${s}">${en}</label>`)
+    .join("");
+  const panels = tabs
+    .map(([k, s]) => `<div class="lb-panel lb-panel-${s}">${list(boards[k])}</div>`)
+    .join("");
   return `<section class="card lb">
-    <input type="radio" name="lbtab" id="lb-daily" checked>
-    <input type="radio" name="lbtab" id="lb-weekly">
+    ${inputs}
     <div class="lb-head">
       🏆 AI Leaderboard
-      <div class="lb-tabs">
-        <label for="lb-daily" class="lb-tab lb-tab-d">Daily</label>
-        <label for="lb-weekly" class="lb-tab lb-tab-w">Weekly</label>
-      </div>
+      <div class="lb-tabs">${labels}</div>
     </div>
-    <div class="lb-panel lb-panel-d">${list(boards.daily)}</div>
-    <div class="lb-panel lb-panel-w">${list(boards.weekly)}</div>
+    ${panels}
   </section>`;
 }
 
@@ -620,22 +669,36 @@ tr.detail>td{white-space:normal;background:var(--surface);color:var(--ink2);
 tr.detail .r{color:var(--ink);font-weight:700;text-transform:uppercase;letter-spacing:.04em;
   font-size:.68rem;margin-right:.5rem}
 /* AI leaderboard (pure-CSS tabs) */
-.lb{padding:1.1rem 1.25rem;margin-bottom:1.1rem}
+.lb{padding:1.1rem 1.25rem;margin-bottom:1.1rem;overflow-x:auto}
 .lb>input{position:absolute;opacity:0;pointer-events:none}
 .lb-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;font-size:.95rem;font-weight:700;margin-bottom:.7rem;flex-wrap:wrap}
 .lb-tabs{display:flex;gap:.3rem}
 .lb-tab{font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);
   padding:.3rem .7rem;border:1px solid var(--border);border-radius:8px;cursor:pointer}
 .lb-tab:hover{color:var(--ink)}
-#lb-daily:checked~.lb-head .lb-tab-d,#lb-weekly:checked~.lb-head .lb-tab-w{
+#lb-d:checked~.lb-head .lb-tab-d,#lb-w:checked~.lb-head .lb-tab-w,
+#lb-q:checked~.lb-head .lb-tab-q,#lb-y:checked~.lb-head .lb-tab-y{
   color:#fff;background:var(--accent);border-color:transparent}
-.lb-panel{display:none;flex-direction:column;gap:.35rem}
-#lb-daily:checked~.lb-panel-d,#lb-weekly:checked~.lb-panel-w{display:flex}
-.lb-row{display:grid;grid-template-columns:1.6rem auto 1fr auto auto;align-items:center;gap:.6rem;
-  padding:.4rem .5rem;border-radius:8px}
+.lb-panel{display:none;flex-direction:column;gap:.2rem;min-width:34rem}
+#lb-d:checked~.lb-panel-d,#lb-w:checked~.lb-panel-w,
+#lb-q:checked~.lb-panel-q,#lb-y:checked~.lb-panel-y{display:flex}
+.lb-row{display:grid;
+  grid-template-columns:1.4rem minmax(6rem,1fr) auto 5.5rem 4.5rem 4rem 4.75rem;
+  align-items:center;gap:.6rem;padding:.4rem .5rem;border-radius:8px}
 .lb-row:hover{background:var(--glass)}
+.lb-colhead{color:var(--muted);font-size:.62rem;text-transform:uppercase;letter-spacing:.06em;
+  padding-bottom:.15rem;border-bottom:1px solid var(--border);border-radius:0}
+.lb-colhead:hover{background:none}
 .lb-rank{color:var(--muted);font-variant-numeric:tabular-nums;font-size:.8rem;text-align:right}
-.lb-co{color:var(--ink2);font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lb-tk{display:flex;flex-direction:column;line-height:1.15;overflow:hidden}
+.lb-co{color:var(--ink2);font-size:.72rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lb-entry{display:flex;flex-direction:column;line-height:1.15;text-align:right}
+.lb-px{font-size:.8rem;font-variant-numeric:tabular-nums;text-align:right}
+.lb-date{font-size:.64rem;color:var(--muted)}
+.lb-gain{font-size:.8rem;font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+.lb-gain.up{color:var(--buy)}
+.lb-gain.down{color:var(--sell)}
+.lb-gain.dim{color:var(--muted);font-weight:400}
 .lb-val{font-size:.8rem;font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
 /* Market-cap tiers: whole-row background tint so big caps jump out. */
 :root{--mc-mega:#e0a92e;--mc-large:var(--accent);--mc-mid:#2bb3a3;--mc-small:#8a8a8a;--mc-micro:var(--border)}

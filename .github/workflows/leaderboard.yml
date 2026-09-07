@@ -1,0 +1,50 @@
+name: AI leaderboard refresh → D1
+
+on:
+  schedule:
+    # Shortly after each daily ingest (03:00 / 13:00 UTC), so the boards pick up
+    # the freshest AI scores and refresh every tracked ticker's current price.
+    - cron: "30 3 * * *"
+    - cron: "30 13 * * *"
+  workflow_dispatch:
+
+jobs:
+  leaderboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      # Ensure the durable leaderboard table exists remotely (idempotent).
+      - name: Ensure D1 schema
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@3 d1 execute insider --remote --file=schema.sql
+
+      # Reconstruct a local DB from D1 (current transactions + ai_scores + the
+      # existing leaderboard rows) so maintenance preserves first-added dates.
+      - name: Pull current data from D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx --yes wrangler@3 d1 export insider --remote --no-schema --output=dump.sql
+          python -m scraper.load_dump schema.sql dump.sql
+
+      # Upsert current picks (stamping entry price for new ones) and refresh
+      # current price for every tracked ticker via the free Yahoo chart API.
+      - name: Maintain leaderboard
+        run: python -m scraper.leaderboard
+
+      - name: Export & push leaderboard to D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          python -m scraper.export_d1 --table leaderboard > leaderboard.sql
+          [ -s leaderboard.sql ] && npx --yes wrangler@3 d1 execute insider --remote --file=leaderboard.sql || echo "no leaderboard rows to push"

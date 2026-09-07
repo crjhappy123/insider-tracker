@@ -13,10 +13,67 @@ import requests
 _CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
 _HEADERS = {"User-Agent": "Mozilla/5.0 (insider-tracker)"}
 _cache: dict[str, dict | None] = {}
+# ticker -> {iso_date: close} over the last year (or None if unavailable).
+_history_cache: dict[str, dict[str, float] | None] = {}
 
 
 def _mean(xs):
     return sum(xs) / len(xs) if xs else None
+
+
+def daily_closes(ticker: str | None) -> dict[str, float] | None:
+    """Map of ISO date -> daily close over ~1y, or None if unavailable.
+
+    Backs the leaderboard's entry price (close on the first-added date) and its
+    current price (the most recent close). Cached per ticker for the process.
+    """
+    if not ticker:
+        return None
+    if ticker in _history_cache:
+        return _history_cache[ticker]
+
+    closes: dict[str, float] | None = None
+    try:
+        time.sleep(0.15)  # be gentle with Yahoo
+        r = requests.get(
+            _CHART.format(ticker=ticker),
+            params={"range": "1y", "interval": "1d"},
+            headers=_HEADERS,
+            timeout=20,
+        )
+        r.raise_for_status()
+        data = r.json()["chart"]["result"][0]
+        stamps = data["timestamp"]
+        vals = data["indicators"]["quote"][0]["close"]
+        closes = {
+            time.strftime("%Y-%m-%d", time.gmtime(ts)): round(c, 2)
+            for ts, c in zip(stamps, vals)
+            if c is not None
+        } or None
+    except (requests.RequestException, KeyError, ValueError, IndexError):
+        closes = None
+
+    _history_cache[ticker] = closes
+    return closes
+
+
+def close_on(ticker: str | None, day: str) -> float | None:
+    """Close on `day` (ISO), falling back to the nearest prior trading day."""
+    closes = daily_closes(ticker)
+    if not closes:
+        return None
+    if day in closes:
+        return closes[day]
+    prior = [d for d in closes if d <= day]
+    return closes[max(prior)] if prior else None
+
+
+def latest_close(ticker: str | None) -> float | None:
+    """Most recent available close for `ticker`, or None."""
+    closes = daily_closes(ticker)
+    if not closes:
+        return None
+    return closes[max(closes)]
 
 
 def get_technicals(ticker: str | None) -> dict | None:

@@ -30,6 +30,11 @@ REPORT_COLUMNS = ["report_date", "summary", "model", "created_at"]
 SCORE_COLUMNS = [
     "accession_no", "line_no", "score", "rating", "comment", "created_at",
 ]
+LEADERBOARD_COLUMNS = [
+    "ticker", "company_name", "first_added_date", "last_seen_date",
+    "entry_price", "current_price", "best_score", "best_rating", "best_comment",
+    "total_value", "price_updated_at", "updated_at",
+]
 
 # table -> (columns, insert verb)
 TABLES = {
@@ -37,6 +42,7 @@ TABLES = {
     "companies": (COMPANY_COLUMNS, "INSERT OR REPLACE"),
     "daily_reports": (REPORT_COLUMNS, "INSERT OR REPLACE"),
     "ai_scores": (SCORE_COLUMNS, "INSERT OR REPLACE"),
+    "leaderboard": (LEADERBOARD_COLUMNS, "INSERT OR REPLACE"),
 }
 
 

@@ -60,3 +60,25 @@ CREATE TABLE IF NOT EXISTS ai_scores (
   created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (accession_no, line_no)
 );
+
+-- Durable AI leaderboard: one row per ticker that has ever been an AI pick.
+-- Survives the rolling prune (unlike transactions/ai_scores), so it can back the
+-- quarterly/yearly boards. Windows (daily/weekly/quarterly/yearly) are derived
+-- from last_seen_date. first_added_date + entry_price are set once and preserved;
+-- current_price is refreshed on every maintenance run.
+CREATE TABLE IF NOT EXISTS leaderboard (
+  ticker           TEXT PRIMARY KEY,
+  company_name     TEXT,
+  first_added_date TEXT,          -- first date this ticker became an AI pick
+  last_seen_date   TEXT,          -- most recent date it was a pick (windowing)
+  entry_price      REAL,          -- market close on first_added_date (set once)
+  current_price    REAL,          -- latest market price, refreshed each run
+  best_score       INTEGER,       -- best AI conviction score to date
+  best_rating      TEXT,
+  best_comment     TEXT,
+  total_value      REAL,          -- summed insider buy $ of its scored picks
+  price_updated_at TEXT,
+  updated_at       TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_lb_last_seen ON leaderboard(last_seen_date);
+CREATE INDEX IF NOT EXISTS ix_lb_score     ON leaderboard(best_score);
