@@ -5,6 +5,7 @@ companies use INSERT OR REPLACE so weekly refreshes overwrite prior values.
 
     python -m scraper.export_d1 > data.sql                 # transactions (default)
     python -m scraper.export_d1 --table companies > companies.sql
+    python -m scraper.export_d1 --table cn_transactions > cn_data.sql   # A-share side
     python -m scraper.export_d1 --since 2026-08-01 > data.sql   # limit transactions
     # then: wrangler d1 execute insider --remote --file=data.sql
 """
@@ -35,6 +36,17 @@ LEADERBOARD_COLUMNS = [
     "entry_price", "current_price", "best_score", "best_rating", "best_comment",
     "total_value", "price_updated_at", "updated_at",
 ]
+# A-share (/cn) tables.
+CN_TXN_COLUMNS = [
+    "change_id", "change_date", "code", "exchange", "company_name",
+    "insider_name", "insider_title", "relation", "change_reason", "shares",
+    "price", "value", "shares_owned_after", "change_ratio", "market_cap",
+]
+CN_COMPANY_COLUMNS = [
+    "code", "name", "exchange", "last_price", "market_cap", "float_market_cap",
+    "updated_at",
+]
+CN_SCORE_COLUMNS = ["change_id", "score", "rating", "comment", "created_at"]
 
 # table -> (columns, insert verb)
 TABLES = {
@@ -43,6 +55,16 @@ TABLES = {
     "daily_reports": (REPORT_COLUMNS, "INSERT OR REPLACE"),
     "ai_scores": (SCORE_COLUMNS, "INSERT OR REPLACE"),
     "leaderboard": (LEADERBOARD_COLUMNS, "INSERT OR REPLACE"),
+    "cn_transactions": (CN_TXN_COLUMNS, "INSERT OR IGNORE"),
+    "cn_companies": (CN_COMPANY_COLUMNS, "INSERT OR REPLACE"),
+    "cn_daily_reports": (REPORT_COLUMNS, "INSERT OR REPLACE"),
+    "cn_ai_scores": (CN_SCORE_COLUMNS, "INSERT OR REPLACE"),
+    "cn_leaderboard": (LEADERBOARD_COLUMNS, "INSERT OR REPLACE"),
+}
+# Tables whose rows are date-windowed by `--since`: filter column -> ORDER BY.
+SINCE_COLUMN = {
+    "transactions": ("filing_date", "filing_date, id"),
+    "cn_transactions": ("change_date", "change_date, change_id"),
 }
 
 
@@ -66,14 +88,14 @@ def main(argv: list[str]) -> None:
     params: tuple = ()
 
     cols, verb = TABLES[args.table]
-    if args.table == "transactions":
-        q = f"SELECT {', '.join(cols)} FROM transactions"
+    q = f"SELECT {', '.join(cols)} FROM {args.table}"
+    windowed = SINCE_COLUMN.get(args.table)
+    if windowed:
+        date_col, order_by = windowed
         if args.since:
-            q += " WHERE filing_date >= ?"
+            q += f" WHERE {date_col} >= ?"
             params = (args.since,)
-        q += " ORDER BY filing_date, id"
-    else:
-        q = f"SELECT {', '.join(cols)} FROM {args.table}"
+        q += f" ORDER BY {order_by}"
 
     col_list = ", ".join(cols)
     # No BEGIN/COMMIT wrapper: D1's `d1 execute --file` rejects explicit SQL

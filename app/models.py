@@ -129,3 +129,106 @@ class Leaderboard(Base):
     total_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     price_updated_at: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+# ---------------------------------------------------------------------------
+# A-share (中国 A 股) tables, served at /cn. Kept entirely separate from the US
+# tables above — different identifiers (6-digit 股票代码 vs CIK), different
+# currency, different source API — so neither side can affect the other.
+# ---------------------------------------------------------------------------
+
+
+class CnTransaction(Base):
+    """One 董监高持股变动 record. Only 增持 (net buys) are ingested."""
+
+    __tablename__ = "cn_transactions"
+    __table_args__ = (
+        # 东方财富 emits one record per (变动人, 关联董监高) pair, so one purchase by
+        # an entity tied to two officers arrives twice under different GGEIDs.
+        # This key collapses them so 增持总额 isn't double-counted.
+        UniqueConstraint(
+            "change_date", "code", "insider_name", "shares", "price", "change_reason",
+            name="uq_cn_change",
+        ),
+    )
+
+    # 东方财富 GGEID: stable per disclosed change, so re-ingesting a day is a no-op.
+    change_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+
+    change_date: Mapped[date] = mapped_column(Date, index=True)  # 变动日期
+    code: Mapped[str] = mapped_column(String(8), index=True)  # 股票代码
+    exchange: Mapped[Optional[str]] = mapped_column(String(4), nullable=True)  # SH/SZ/BJ
+    company_name: Mapped[str] = mapped_column(String(255))  # 证券简称
+
+    insider_name: Mapped[str] = mapped_column(String(64), index=True)  # 变动人
+    insider_title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # 职务
+    relation: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # 关系
+    change_reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # 途径
+
+    shares: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    value: Mapped[Optional[float]] = mapped_column(Float, index=True, nullable=True)
+    shares_owned_after: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    change_ratio: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    market_cap: Mapped[Optional[float]] = mapped_column(Float, index=True, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class CnCompany(Base):
+    """A-share company 市值 snapshot, refreshed on every ingest."""
+
+    __tablename__ = "cn_companies"
+
+    code: Mapped[str] = mapped_column(String(8), primary_key=True)
+    name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    exchange: Mapped[Optional[str]] = mapped_column(String(4), nullable=True)
+    last_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    market_cap: Mapped[Optional[float]] = mapped_column(Float, index=True, nullable=True)
+    float_market_cap: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class CnDailyReport(Base):
+    """AI-generated daily A-share report, one per day."""
+
+    __tablename__ = "cn_daily_reports"
+
+    report_date: Mapped[str] = mapped_column(String(10), primary_key=True)
+    summary: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    model: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class CnAiScore(Base):
+    """AI conviction score + comment for a single 增持 record."""
+
+    __tablename__ = "cn_ai_scores"
+
+    change_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    rating: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    comment: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class CnLeaderboard(Base):
+    """Durable A-share AI leaderboard; `ticker` holds the 6-digit 股票代码.
+
+    Same shape as `Leaderboard` so the frontend's windowing/ranking is shared.
+    """
+
+    __tablename__ = "cn_leaderboard"
+
+    ticker: Mapped[str] = mapped_column(String(8), primary_key=True)
+    company_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    first_added_date: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    last_seen_date: Mapped[Optional[str]] = mapped_column(String(10), index=True, nullable=True)
+    entry_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    current_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    best_score: Mapped[Optional[int]] = mapped_column(Integer, index=True, nullable=True)
+    best_rating: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    best_comment: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    total_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    price_updated_at: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

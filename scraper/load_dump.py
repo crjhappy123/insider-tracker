@@ -1,7 +1,7 @@
 """Load a schema + a D1 SQL dump into the local SQLite DB.
 
-Used by the weekly market-cap workflow to reconstruct the transactions table
-from a `wrangler d1 export` dump before computing company market caps.
+Used by the leaderboard / market-cap / A-share workflows to reconstruct the
+current remote state from a `wrangler d1 export` dump before recomputing.
 
     python -m scraper.load_dump schema.sql dump.sql
 """
@@ -9,6 +9,9 @@ import sqlite3
 import sys
 
 from app.db import DB_PATH
+
+# Reported after loading, so a workflow log shows what actually came down.
+_SUMMARY_TABLES = ("transactions", "leaderboard", "cn_transactions", "cn_leaderboard")
 
 
 def main(argv):
@@ -18,8 +21,14 @@ def main(argv):
         with open(path) as fh:
             conn.executescript(fh.read())
     conn.commit()
-    n = conn.execute("SELECT count(*) FROM transactions").fetchone()[0]
-    print(f"Loaded {n} transactions into {db_path}")
+    counts = []
+    for table in _SUMMARY_TABLES:
+        try:
+            n = conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        except sqlite3.OperationalError:
+            continue  # table not in this dump
+        counts.append(f"{n} {table}")
+    print(f"Loaded {', '.join(counts)} into {db_path}")
 
 
 if __name__ == "__main__":

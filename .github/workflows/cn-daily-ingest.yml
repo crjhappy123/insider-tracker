@@ -1,0 +1,106 @@
+name: Daily A-share ingest → D1
+
+on:
+  schedule:
+    # Twice daily (UTC). A-share insiders must disclose within 2 trading days, so
+    # records for a 变动日期 keep arriving for days afterwards — every run
+    # re-ingests a 5-day window to pick up late disclosures.
+    #   09:30 UTC — 17:30 北京时间, after the 15:00 close + evening disclosures.
+    #   01:00 UTC — 09:00 北京时间, before the open: self-heal overnight arrivals.
+    - cron: "30 9 * * *"
+    - cron: "0 1 * * *"
+  workflow_dispatch: # allow manual runs
+    inputs:
+      date:
+        description: "变动日期 to ingest (YYYY-MM-DD). Defaults to a 5-day window."
+        required: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      # Ensure the cn_* tables exist remotely (idempotent) before pushing rows.
+      - name: Ensure D1 schema
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@3 d1 execute insider --remote --file=schema.sql
+
+      # Start from the rows already in D1 so the local dedupe/upserts see the
+      # existing state (and so a re-ingest doesn't resurrect pruned rows).
+      - name: Pull current A-share data from D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx --yes wrangler@3 d1 export insider --remote --no-schema --output=dump.sql
+          python -m scraper.load_dump schema.sql dump.sql
+
+      - name: Ingest 董监高增持 into local SQLite
+        run: |
+          MANUAL="${{ github.event.inputs.date }}"
+          if [ -n "$MANUAL" ]; then
+            START="$MANUAL"; END="$MANUAL"
+          else
+            # 5-day window: late disclosures for earlier 变动日期 land here.
+            START="$(date -u -d '4 days ago' +%F)"; END="$(date -u +%F)"
+          fi
+          echo "Ingesting $START..$END"
+          python -m scraper.cn_ingest "$START" "$END"
+          if [ -n "$MANUAL" ]; then
+            DAY="$MANUAL"
+          else
+            DAY="$(python -c "import sqlite3; print(sqlite3.connect('insider.db').execute('select max(change_date) from cn_transactions').fetchone()[0] or '')")"
+          fi
+          echo "DAY=$DAY" >> "$GITHUB_ENV"
+          echo "Freshest 变动日期 in DB: $DAY"
+
+      - name: Push A-share rows to D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          python -m scraper.export_d1 --table cn_transactions > cn_data.sql
+          python -m scraper.export_d1 --table cn_companies > cn_companies.sql
+          [ -s cn_data.sql ] && npx --yes wrangler@3 d1 execute insider --remote --file=cn_data.sql || echo "no A-share rows to push"
+          [ -s cn_companies.sql ] && npx --yes wrangler@3 d1 execute insider --remote --file=cn_companies.sql || echo "no companies to push"
+
+      - name: Generate AI report + scores
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+        run: |
+          if [ -z "$DAY" ]; then echo "No data ingested; skipping AI report"; exit 0; fi
+          python -m scraper.cn_ai_report "$DAY"
+
+      - name: Push AI report + scores to D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # If GEMINI_API_KEY is unset the tables are empty; skip the empty files.
+          python -m scraper.export_d1 --table cn_daily_reports > cn_reports.sql
+          python -m scraper.export_d1 --table cn_ai_scores > cn_scores.sql
+          [ -s cn_reports.sql ] && npx --yes wrangler@3 d1 execute insider --remote --file=cn_reports.sql || echo "no report to push"
+          [ -s cn_scores.sql ] && npx --yes wrangler@3 d1 execute insider --remote --file=cn_scores.sql || echo "no scores to push"
+
+      # Keep only the rolling retention window (default 7 days) in D1. `--market cn`
+      # so the US tables are untouched by this workflow.
+      - name: Prune old A-share data from D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          RETENTION_DAYS: ${{ vars.RETENTION_DAYS }}
+        run: |
+          python -m scraper.prune --market cn --print-sql > cn_prune.sql
+          cat cn_prune.sql
+          npx --yes wrangler@3 d1 execute insider --remote --file=cn_prune.sql

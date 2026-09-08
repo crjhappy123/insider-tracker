@@ -5,4 +5,7 @@ __pycache__/
 *.pyc
 node_modules/
 data.sql
+# Generated A-share dumps (scraper.export_d1 --table cn_*), pushed to D1 not git.
+cn_*.sql
+dump.sql
 .wrangler/
