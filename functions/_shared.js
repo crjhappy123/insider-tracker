@@ -11,8 +11,9 @@ export const THEME_BOOT =
   `<script>try{var t=localStorage.getItem('theme');` +
   `if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>`;
 
-// Client-side enhancements (no framework): theme toggle, clickable column
-// sorting, AI-detail disclosure rows, and zebra striping that survives sorting.
+// Client-side enhancements (no framework): theme toggle, click-to-copy tickers,
+// clickable column sorting, AI-detail disclosure rows, and zebra striping that
+// survives sorting.
 export const PAGE_SCRIPT = `<script>
 (function(){
   // Theme toggle (persisted; initial theme applied by the inline <head> script).
@@ -23,6 +24,39 @@ export const PAGE_SCRIPT = `<script>
     var next=cur==='dark'?'light':'dark';
     el.setAttribute('data-theme',next);
     try{localStorage.setItem('theme',next);}catch(e){}
+  });
+
+  // Click a ticker to copy it. Delegated from the document (not the table) so the
+  // same handler covers all three places a ticker renders: the table, the AI
+  // report picks, and the leaderboard rows.
+  function copyText(text){
+    if(navigator.clipboard&&navigator.clipboard.writeText)
+      return navigator.clipboard.writeText(text);
+    // Fallback for non-secure contexts / older browsers.
+    return new Promise(function(resolve,reject){
+      var ta=document.createElement('textarea');
+      ta.value=text; ta.setAttribute('readonly','');
+      ta.style.cssText='position:fixed;top:-9999px;opacity:0';
+      document.body.appendChild(ta); ta.select();
+      var ok=false; try{ ok=document.execCommand('copy'); }catch(e){}
+      document.body.removeChild(ta);
+      ok?resolve():reject();
+    });
+  }
+  document.addEventListener('click',function(e){
+    var el=e.target.closest('.ticker'); if(!el)return;
+    // Drop any leftover ✓ BEFORE reading the text, or a rapid second click would
+    // copy "600801✓".
+    var old=el.querySelector('.copied'); if(old)old.remove();
+    var text=(el.getAttribute('data-copy')||el.textContent||'').trim();
+    if(!text||text==='\\u2014')return; // the "—" placeholder isn't a ticker
+    copyText(text).then(function(){
+      var tick=document.createElement('span');
+      tick.className='copied'; tick.textContent='✓';
+      el.appendChild(tick);
+      // Re-read the node on cleanup: sorting can move the row in between.
+      setTimeout(function(){ if(tick.parentNode)tick.remove(); },1200);
+    }).catch(function(){});
   });
 
   var tbody=document.querySelector('table tbody');
@@ -177,7 +211,16 @@ td.dim{color:var(--muted)}
 td.co{max-width:220px;overflow:hidden;text-overflow:ellipsis}
 td.val{font-weight:600}
 td.tk{line-height:1.2}
-.ticker{display:block;font-weight:700;letter-spacing:.02em;color:var(--accent)}
+/* Tickers are click-to-copy. width:fit-content so the hover underline hugs the
+   text instead of spanning the whole cell. */
+.ticker{display:block;width:fit-content;font-weight:700;letter-spacing:.02em;
+  color:var(--accent);cursor:pointer}
+.ticker:hover{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px}
+/* The "copied" ✓: zero width + visible overflow, so it draws beside the ticker
+   without widening the column — a 1-char reflow mid-click reads as a jump. */
+.copied{display:inline-block;width:0;overflow:visible;position:relative;left:.28rem;
+  white-space:nowrap;color:var(--buy);font-weight:700;animation:copied-in .12s ease-out}
+@keyframes copied-in{from{opacity:0;transform:translateY(-2px)}to{opacity:1;transform:none}}
 .mcap{display:block;font-size:.68rem;color:var(--muted);font-variant-numeric:tabular-nums}
 .code{color:var(--muted);font-size:.72rem}
 tbody tr.buy td:first-child{box-shadow:inset 3px 0 0 var(--buy)}
