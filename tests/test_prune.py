@@ -19,6 +19,16 @@ def test_delete_statements_cover_all_three_tables():
     assert stmts[0].startswith("DELETE FROM ai_scores")
 
 
+def test_cn_prune_also_drops_unfollowed_boards_and_their_leaderboard_rows():
+    """Boards we don't follow are dropped regardless of age — leaderboard included."""
+    joined = " ".join(prune_mod._market_statements("cn", "2026-09-03"))
+    assert "code LIKE '30%'" in joined
+    assert "code LIKE '688%'" in joined
+    assert "DELETE FROM cn_leaderboard WHERE ticker LIKE '30%'" in joined
+    # The US statements must stay age-only.
+    assert "LIKE" not in " ".join(prune_mod._market_statements("us", "2026-09-03"))
+
+
 def test_prune_keeps_in_window_drops_older(seeded_db):
     """Seed rows are filed 2026-08-28; a window ending 2026-09-02 keeps them."""
     from app.db import SessionLocal

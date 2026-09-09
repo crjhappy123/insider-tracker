@@ -30,6 +30,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from app.db import SessionLocal, init_db
 from app.models import CnAiScore, CnCompany, CnDailyReport, CnTransaction
 from scraper.cn_eastmoney import get_technicals
+from scraper.cn_ingest import is_excluded_code
 from scraper.prune import cutoff_date
 
 API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -149,9 +150,14 @@ def _pending_buys(day: date, lookback: int = LOOKBACK_DAYS) -> tuple[list[dict],
         .where(unscored)
     )
 
-    eligible, skipped = [], {"unknown_cap": 0, "below_floor": 0}
+    eligible, skipped = [], {"unknown_cap": 0, "below_floor": 0, "excluded_board": 0}
     with SessionLocal() as session:
         for t, mktcap in session.execute(stmt):
+            if is_excluded_code(t.code):
+                # 创业板/科创板 left over from before the exclusion; prune drops them
+                # later in the same pipeline run, so don't pay to score them.
+                skipped["excluded_board"] += 1
+                continue
             if mktcap is None:
                 # Hidden on the page too (it filters on the same COALESCE), so
                 # don't pay for a score; the next successful quote makes it eligible.
@@ -244,10 +250,11 @@ def generate(day: date, lookback: int = LOOKBACK_DAYS) -> int:
             f"{skipped['unknown_cap']} unscored record(s) have no 总市值 "
             "(quote lookup failed?); they stay unscored until it is known."
         )
-    if skipped["below_floor"] or skipped["over_cap"]:
+    if skipped["below_floor"] or skipped["over_cap"] or skipped["excluded_board"]:
         print(
             f"skipped {skipped['below_floor']} below ¥{MIN_SCORE_MKTCAP / 1e8:.0f}亿"
-            f" and deferred {skipped['over_cap']} over the {MAX_PICKS}-pick cap."
+            f" and {skipped['excluded_board']} on unfollowed boards;"
+            f" deferred {skipped['over_cap']} over the {MAX_PICKS}-pick cap."
         )
     if not items:
         print(f"{day}: no unscored A-share 增持 to score in the last {lookback} day(s).")

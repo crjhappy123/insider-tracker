@@ -39,6 +39,22 @@ INGEST_REASONS = {
     if r.strip()
 }
 
+# 股票代码 prefixes to skip entirely: 30 = 创业板, 688 = 科创板 (689 is the 科创板 CDR
+# range). Both trade on a valuation system we deliberately don't follow, so they are
+# dropped at the source — nothing downstream scores, ranks, or renders them.
+# Set CN_EXCLUDE_CODE_PREFIXES="" to keep every board.
+_DEFAULT_EXCLUDED_PREFIXES = "30,688,689"
+EXCLUDED_CODE_PREFIXES = tuple(
+    p.strip()
+    for p in os.environ.get("CN_EXCLUDE_CODE_PREFIXES", _DEFAULT_EXCLUDED_PREFIXES).split(",")
+    if p.strip()
+)
+
+
+def is_excluded_code(code: str | None) -> bool:
+    """True for 股票代码 on a board we don't follow (see EXCLUDED_CODE_PREFIXES)."""
+    return bool(code) and bool(EXCLUDED_CODE_PREFIXES) and code.startswith(EXCLUDED_CODE_PREFIXES)
+
 
 def _iso_date(raw: str | None) -> str | None:
     """"2026-09-07 00:00:00" -> "2026-09-07"."""
@@ -92,6 +108,8 @@ def _buy_rows(day: date) -> list[dict]:
         change_id = rec.get("GGEID")
         if not code or change_id is None:
             continue
+        if is_excluded_code(code):
+            continue  # 创业板 / 科创板 — not followed
         # CHANGE_AMOUNT is signed like CHANGE_SHARES; these are buys, so take abs.
         value = _num(rec.get("CHANGE_AMOUNT"))
         rows.append(

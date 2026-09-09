@@ -113,6 +113,10 @@ final `refresh_caps()` step also self-heals any cap missed to a transient 502.
 CN_MIN_MARKET_CAP=1000000000 python -m scraper.cn_ingest   # default ¥10亿 floor
 ```
 
+创业板 (30x) and 科创板 (688/689) are **not followed**: ingest drops them at the
+source and `prune` clears any left over, leaderboard rows included. Change the set
+with `CN_EXCLUDE_CODE_PREFIXES` (empty keeps every board).
+
 The page hides companies below **¥50亿** (raise it with the 最小市值 filter), and
 tints rows by cap tier: 超大 ≥¥1万亿, 大盘 ≥¥500亿, 中盘 ≥¥100亿, 小盘 ≥¥30亿.
 

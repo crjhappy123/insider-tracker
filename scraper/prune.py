@@ -3,8 +3,9 @@
 The site only shows recent insider buying, so anything older than
 RETENTION_DAYS (default 7) is dropped — from the transactions table, the AI
 scores tied to them, and the daily reports. Keeps the DB (and D1) small and cheap.
-The durable leaderboard tables are never pruned; they back the quarterly/yearly
-boards.
+The durable leaderboard tables are not pruned by age; they back the quarterly/yearly
+boards. The A-share side additionally drops 股票代码 on boards we don't follow
+(``cn_ingest.EXCLUDED_CODE_PREFIXES``), leaderboard rows included.
 
     python -m scraper.prune                      # prune US tables in local SQLite
     python -m scraper.prune --market cn          # prune the A-share tables
@@ -20,6 +21,7 @@ from datetime import date, timedelta
 from sqlalchemy import text
 
 from app.db import SessionLocal, init_db
+from scraper.cn_ingest import EXCLUDED_CODE_PREFIXES
 
 # `or` so an empty env value from CI falls back to the default too.
 RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS") or 7)
@@ -32,16 +34,39 @@ def cutoff_date(today: date | None = None) -> date:
     return (today or date.today()) - timedelta(days=RETENTION_DAYS - 1)
 
 
+def _excluded_code_sql(column: str) -> str:
+    """SQL predicate matching 股票代码 on a board we don't follow, or "" if none.
+
+    Ingest already drops these (``cn_ingest.EXCLUDED_CODE_PREFIXES``); pruning them
+    too clears out whatever a pre-exclusion run — or a widened prefix list — left
+    behind, including the durable leaderboard rows the retention window never touches.
+    """
+    if not EXCLUDED_CODE_PREFIXES:
+        return ""
+    return " OR ".join(f"{column} LIKE '{p}%'" for p in EXCLUDED_CODE_PREFIXES)
+
+
 # Ordered so AI rows go before the transactions they reference.
 def _market_statements(market: str, cutoff: str) -> list[str]:
     if market == "cn":
-        return [
-            # AI scores whose 增持 record falls outside the window.
+        excluded = _excluded_code_sql("code")
+        # Out of the window OR on an unfollowed board.
+        stale = f"change_date < '{cutoff}'" + (f" OR {excluded}" if excluded else "")
+        stmts = [
+            # AI scores whose 增持 record is stale.
             "DELETE FROM cn_ai_scores WHERE change_id IN ("
-            f"SELECT change_id FROM cn_transactions WHERE change_date < '{cutoff}')",
-            f"DELETE FROM cn_transactions WHERE change_date < '{cutoff}'",
+            f"SELECT change_id FROM cn_transactions WHERE {stale})",
+            f"DELETE FROM cn_transactions WHERE {stale}",
             f"DELETE FROM cn_daily_reports WHERE report_date < '{cutoff}'",
         ]
+        if excluded:
+            stmts += [
+                f"DELETE FROM cn_companies WHERE {excluded}",
+                # The leaderboard is otherwise never pruned, but a board we don't
+                # follow shouldn't keep ranking in the quarterly/yearly boards.
+                f"DELETE FROM cn_leaderboard WHERE {_excluded_code_sql('ticker')}",
+            ]
+        return stmts
     return [
         # AI scores whose transaction falls outside the window.
         "DELETE FROM ai_scores WHERE accession_no IN ("
@@ -58,12 +83,19 @@ def _delete_statements(cutoff: str, markets: tuple[str, ...] = ("us",)) -> list[
 # label -> (COUNT query template) for the pre-delete tally, per market.
 def _count_queries(market: str, cutoff: str) -> dict[str, str]:
     if market == "cn":
-        return {
+        excluded = _excluded_code_sql("code")
+        stale = f"change_date < '{cutoff}'" + (f" OR {excluded}" if excluded else "")
+        counts = {
             "cn_ai_scores": "SELECT count(*) FROM cn_ai_scores WHERE change_id IN "
-            f"(SELECT change_id FROM cn_transactions WHERE change_date < '{cutoff}')",
-            "cn_transactions": f"SELECT count(*) FROM cn_transactions WHERE change_date < '{cutoff}'",
+            f"(SELECT change_id FROM cn_transactions WHERE {stale})",
+            "cn_transactions": f"SELECT count(*) FROM cn_transactions WHERE {stale}",
             "cn_daily_reports": f"SELECT count(*) FROM cn_daily_reports WHERE report_date < '{cutoff}'",
         }
+        if excluded:
+            counts["cn_leaderboard"] = (
+                f"SELECT count(*) FROM cn_leaderboard WHERE {_excluded_code_sql('ticker')}"
+            )
+        return counts
     return {
         "ai_scores": "SELECT count(*) FROM ai_scores WHERE accession_no IN "
         f"(SELECT accession_no FROM transactions WHERE filing_date < '{cutoff}')",

@@ -153,6 +153,32 @@ def test_an_empty_day_writes_nothing(stub_eastmoney):
     assert cn_ingest.ingest_day(date(2026, 9, 5)) == 0  # 周六, no disclosures
 
 
+def test_chinext_and_star_market_codes_are_not_ingested(stub_eastmoney):
+    """30x = 创业板, 688/689 = 科创板: boards we deliberately don't follow."""
+    stub_eastmoney["records"] = [
+        _record(GGEID=1, SECURITY_CODE="301533", DERIVE_SECURITY_CODE="301533.SZ"),
+        _record(GGEID=2, SECURITY_CODE="688478", DERIVE_SECURITY_CODE="688478.SH"),
+        _record(GGEID=3, SECURITY_CODE="689009", DERIVE_SECURITY_CODE="689009.SH"),
+        _record(GGEID=4),  # 600826, 主板 — kept
+    ]
+    stub_eastmoney["quotes"] = {
+        c: _quote(2e10) for c in ("301533", "688478", "689009", "600826")
+    }
+    assert cn_ingest.ingest_day(date(2026, 9, 7)) == 1
+    with SessionLocal() as s:
+        assert [r.code for r in s.query(CnTransaction).all()] == ["600826"]
+
+
+def test_beijing_and_main_board_codes_survive_the_exclusion():
+    # 920 (北交所) and 003 (深市主板) both start with a digit an over-broad prefix
+    # match would catch; only 30/688/689 are excluded.
+    assert not cn_ingest.is_excluded_code("920168")
+    assert not cn_ingest.is_excluded_code("003816")
+    assert not cn_ingest.is_excluded_code("600826")
+    assert cn_ingest.is_excluded_code("300806")
+    assert cn_ingest.is_excluded_code("688575")
+
+
 # --- AI pick selection --------------------------------------------------------
 
 
