@@ -4,8 +4,8 @@ from datetime import date
 import pytest
 
 from app.db import SessionLocal, init_db
-from app.models import CnCompany, CnTransaction
-from scraper import cn_ingest
+from app.models import CnAiScore, CnCompany, CnTransaction
+from scraper import cn_ai_report, cn_ingest
 from scraper.cn_eastmoney import exchange_from_code, exchange_of, secid
 
 
@@ -151,3 +151,84 @@ def test_ingest_upserts_company_market_cap(stub_eastmoney):
 
 def test_an_empty_day_writes_nothing(stub_eastmoney):
     assert cn_ingest.ingest_day(date(2026, 9, 5)) == 0  # 周六, no disclosures
+
+
+# --- AI pick selection --------------------------------------------------------
+
+
+@pytest.fixture()
+def scoring_db(monkeypatch):
+    """Empty cn_* tables; technicals stubbed out so selection needs no network."""
+    monkeypatch.setattr(cn_ai_report, "get_technicals", lambda code, exchange=None: None)
+    init_db()
+    with SessionLocal() as s:
+        s.query(CnAiScore).delete()
+        s.query(CnTransaction).delete()
+        s.query(CnCompany).delete()
+        s.commit()
+    return None
+
+
+def _buy(change_id, day, code="600826", cap=2e10, value=77100):
+    return CnTransaction(
+        # insider_name varies per id: uq_cn_change would otherwise collapse two
+        # same-day buys of the same size at the same company.
+        change_id=str(change_id), change_date=day, code=code, exchange="SH",
+        company_name="兰生股份", insider_name=f"陈小宏{change_id}", insider_title="董事长",
+        change_reason="集中竞价", shares=10000, price=7.71, value=value,
+        market_cap=cap,
+    )
+
+
+def test_pending_buys_covers_the_whole_window_not_just_the_freshest_day(scoring_db):
+    """Late A-share disclosures land on past 变动日期, so they must still be scored."""
+    with SessionLocal() as s:
+        s.add_all([_buy(1, date(2026, 9, 8)), _buy(2, date(2026, 9, 4))])
+        s.commit()
+    items, _ = cn_ai_report._pending_buys(date(2026, 9, 8), lookback=7)
+    assert {i["id"] for i in items} == {"1", "2"}
+    # Freshest 变动日期 first, so the MAX_PICKS cut keeps the most relevant records.
+    assert [i["id"] for i in items] == ["1", "2"]
+
+
+def test_pending_buys_excludes_records_that_already_have_a_score(scoring_db):
+    with SessionLocal() as s:
+        s.add_all([_buy(1, date(2026, 9, 8)), _buy(2, date(2026, 9, 8))])
+        s.add(CnAiScore(change_id="1", score=70, rating="中等", comment="…"))
+        s.commit()
+    items, _ = cn_ai_report._pending_buys(date(2026, 9, 8), lookback=7)
+    assert [i["id"] for i in items] == ["2"]
+
+
+def test_pending_buys_ignores_records_outside_the_window(scoring_db):
+    with SessionLocal() as s:
+        s.add_all([_buy(1, date(2026, 9, 8)), _buy(2, date(2026, 9, 1))])
+        s.commit()
+    items, _ = cn_ai_report._pending_buys(date(2026, 9, 8), lookback=3)
+    assert [i["id"] for i in items] == ["1"]
+
+
+def test_pending_buys_skips_small_and_unknown_caps_and_counts_them(scoring_db):
+    with SessionLocal() as s:
+        s.add_all(
+            [
+                _buy(1, date(2026, 9, 8), cap=2e10),
+                _buy(2, date(2026, 9, 8), code="000001", cap=1e8),
+                _buy(3, date(2026, 9, 8), code="000002", cap=None),
+            ]
+        )
+        s.commit()
+    items, skipped = cn_ai_report._pending_buys(date(2026, 9, 8), lookback=7)
+    assert [i["id"] for i in items] == ["1"]
+    assert skipped["below_floor"] == 1
+    assert skipped["unknown_cap"] == 1
+
+
+def test_pending_buys_prefers_cn_companies_cap_over_the_stored_snapshot(scoring_db):
+    """A cap healed by refresh_caps makes a previously unknown record eligible."""
+    with SessionLocal() as s:
+        s.add(_buy(1, date(2026, 9, 8), cap=None))
+        s.add(CnCompany(code="600826", name="兰生股份", exchange="SH", market_cap=2e10))
+        s.commit()
+    items, _ = cn_ai_report._pending_buys(date(2026, 9, 8), lookback=7)
+    assert [i["id"] for i in items] == ["1"]

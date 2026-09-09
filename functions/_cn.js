@@ -130,8 +130,18 @@ export function leaderboards(db) {
   return loadBoards(db, "cn_leaderboard");
 }
 
-// Latest AI daily report — only if it covers the most recent data day, so a
-// skipped report never surfaces as stale prior-day commentary.
+// A report older than this many days behind the freshest data day is dropped, so a
+// prolonged AI outage shows nothing rather than stale commentary. One day of slack
+// is needed regardless: the pre-open run's freshest 变动日期 is usually yesterday's.
+const REPORT_MAX_AGE_DAYS = 3;
+const REPORT_MAX_PICKS = 12;
+
+// Latest AI daily report, with the best-scored pick per company as its picks.
+//
+// The picks span the whole retained window rather than the report's own day:
+// scoring is windowed (see scraper/cn_ai_report.py), so a record disclosed late is
+// scored under a later report_date than its 变动日期 — keying the picks to
+// report_date would hide exactly those records.
 export async function latestReport(db) {
   try {
     const row = await db
@@ -141,24 +151,29 @@ export async function latestReport(db) {
     const latest = await db
       .prepare("SELECT MAX(change_date) AS d FROM cn_transactions")
       .first();
-    if (latest && latest.d && row.report_date !== latest.d) return null; // stale
+    if (latest && latest.d) {
+      const ageDays = (Date.parse(latest.d) - Date.parse(row.report_date)) / 864e5;
+      if (ageDays > REPORT_MAX_AGE_DAYS) return null; // stale
+    }
     const { results } = await db
       .prepare(
-        "SELECT t.code, t.company_name, t.insider_name, t.value, " +
+        "SELECT t.code, t.company_name, t.insider_name, t.value, t.change_date, " +
           "a.score, a.rating, a.comment " +
           "FROM cn_ai_scores a " +
           "JOIN cn_transactions t ON t.change_id = a.change_id " +
-          "WHERE t.change_date = ? ORDER BY a.score DESC"
+          "WHERE a.score IS NOT NULL " +
+          "ORDER BY a.score DESC, t.change_date DESC, t.value DESC"
       )
-      .bind(row.report_date)
       .all();
     // One block per company (dedupe by code; rows are score-desc ordered).
     const seen = new Set();
-    row.picks = (results || []).filter((p) => {
-      if (seen.has(p.code)) return false;
-      seen.add(p.code);
-      return true;
-    });
+    row.picks = (results || [])
+      .filter((p) => {
+        if (seen.has(p.code)) return false;
+        seen.add(p.code);
+        return true;
+      })
+      .slice(0, REPORT_MAX_PICKS);
     return row;
   } catch {
     return null; // tables may not exist yet
@@ -257,6 +272,7 @@ export function renderPage(rows, f, report, boards) {
           <span class="pick-co">${esc(p.company_name || "")}</span>
           ${aiPill(p.score, { rating: p.rating, comment: p.comment })}
           ${p.rating ? `<span class="pick-rating">${esc(p.rating)}</span>` : ""}
+          ${p.change_date ? `<span class="dim">${esc(p.change_date)}</span>` : ""}
         </div>
         <div class="pick-comment">${esc(p.comment || "")}</div>
       </div>`

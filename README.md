@@ -123,11 +123,18 @@ Same Gemini pipeline as the US side, with an A-share-tuned Chinese prompt
 
 ```bash
 python -m scraper.cn_ai_report 2026-09-04   # scores + 每日复盘 → cn_ai_scores
+python -m scraper.cn_ai_report 2026-09-04 1 # …only that 变动日期 (window = 1 day)
 python -m scraper.cn_leaderboard            # durable 日/周/季/年 boards
 python -m scraper.prune --market cn         # rolling retention window
 ```
 
-`CN_AI_MIN_MARKET_CAP` (default ¥100亿) gates which 增持 get scored.
+Unlike the US side, scoring covers a **window** of 变动日期 (`CN_AI_LOOKBACK_DAYS`,
+default 7 = the retention window) and only records that have no score yet. A-share
+disclosures keep landing on days already past, and a 总市值 missed by a failed quote
+only becomes known later — scoping to the freshest day alone left most records
+permanently unscored. `CN_AI_MIN_MARKET_CAP` (default ¥50亿, matching the page's
+display floor) gates which 增持 get scored; `CN_AI_MAX_PICKS` (40) bounds cost per
+run, and anything over the cap is picked up by the next run.
 
 ### Automate
 

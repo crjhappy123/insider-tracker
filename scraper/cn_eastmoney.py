@@ -29,6 +29,10 @@ _HEADERS = {
 }
 _TIMEOUT = 30
 _PAGE_SIZE = 500  # a full day is ~50 records, so one page is normally enough
+# Failed quote requests one `quotes()` call may spend on bisecting a bad batch.
+# Enough to isolate a couple of unquotable codes, few enough that a dead quote host
+# fails fast instead of retrying every code individually.
+_SPLIT_BUDGET = 8
 
 # Eastmoney's "secid" market prefix. 上交所 = 1; 深交所 and 北交所 = 0.
 _MARKET_PREFIX = {"SH": "1", "SZ": "0", "BJ": "0"}
@@ -137,21 +141,28 @@ def quotes(codes_with_exchange: list[tuple[str, str | None]]) -> dict[str, dict]
     """
     out: dict[str, dict] = {}
     unique = list(dict.fromkeys(codes_with_exchange))
+    budget = [_SPLIT_BUDGET]
     # 100 per request keeps the URL well inside limits.
     for i in range(0, len(unique), 100):
-        _quote_chunk(unique[i : i + 100], out)
+        _quote_chunk(unique[i : i + 100], out, budget)
         time.sleep(0.2)
     return out
 
 
-def _quote_chunk(chunk: list[tuple[str, str | None]], out: dict[str, dict]) -> None:
+def _quote_chunk(
+    chunk: list[tuple[str, str | None]], out: dict[str, dict], budget: list[int]
+) -> None:
     """Fetch one batch of quotes into ``out``; halve and recurse if it fails.
 
     A whole chunk failing after retries is usually one unquotable secid (a newly
     listed or delisted code) poisoning the batch, so splitting recovers the rest
     instead of losing every market cap in the batch.
+
+    ``budget`` bounds how many failed requests the splitting may spend: when the
+    quote host itself is down, every leaf fails, and unbudgeted splitting turns one
+    dead batch into ~2N retried requests (a 30-minute CI step for nothing).
     """
-    if not chunk:
+    if not chunk or budget[0] <= 0:
         return
     payload = _get_json(
         _QUOTE_LIST,
@@ -162,11 +173,12 @@ def _quote_chunk(chunk: list[tuple[str, str | None]], out: dict[str, dict]) -> N
         },
     )
     if payload is None:
+        budget[0] -= 1
         if len(chunk) == 1:
             return  # this single code is unquotable; leave its cap NULL
         mid = len(chunk) // 2
-        _quote_chunk(chunk[:mid], out)
-        _quote_chunk(chunk[mid:], out)
+        _quote_chunk(chunk[:mid], out, budget)
+        _quote_chunk(chunk[mid:], out, budget)
         return
 
     for row in (payload.get("data") or {}).get("diff") or []:
