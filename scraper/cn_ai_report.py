@@ -30,6 +30,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from app.db import SessionLocal, init_db
 from app.models import CnAiScore, CnCompany, CnDailyReport, CnTransaction
 from scraper.cn_eastmoney import get_technicals
+from scraper.prune import cutoff_date
 
 API_KEY = os.environ.get("GEMINI_API_KEY")
 # `or` (not a default arg) so an empty env value from CI falls back too.
@@ -131,7 +132,10 @@ def _pending_buys(day: date, lookback: int = LOOKBACK_DAYS) -> tuple[list[dict],
     company whose 总市值 quote failed during that day's run only becomes eligible
     once ``refresh_caps`` heals it. Returns (items, skip counts for logging).
     """
-    start = day - timedelta(days=max(lookback, 1) - 1)
+    # Never score below the prune cutoff: `day` is the freshest 变动日期, which can
+    # be a day behind today, so a plain lookback would reach records the prune step
+    # deletes minutes later in the same run.
+    start = max(day - timedelta(days=max(lookback, 1) - 1), cutoff_date())
     eff_mktcap = func.coalesce(CnCompany.market_cap, CnTransaction.market_cap)
     unscored = ~(
         select(CnAiScore.change_id)

@@ -158,8 +158,13 @@ def test_an_empty_day_writes_nothing(stub_eastmoney):
 
 @pytest.fixture()
 def scoring_db(monkeypatch):
-    """Empty cn_* tables; technicals stubbed out so selection needs no network."""
+    """Empty cn_* tables; technicals stubbed out so selection needs no network.
+
+    The prune cutoff is pinned far in the past so it never clips these fixed test
+    dates — the clamp itself is covered by its own test below.
+    """
     monkeypatch.setattr(cn_ai_report, "get_technicals", lambda code, exchange=None: None)
+    monkeypatch.setattr(cn_ai_report, "cutoff_date", lambda: date(2000, 1, 1))
     init_db()
     with SessionLocal() as s:
         s.query(CnAiScore).delete()
@@ -222,6 +227,16 @@ def test_pending_buys_skips_small_and_unknown_caps_and_counts_them(scoring_db):
     assert [i["id"] for i in items] == ["1"]
     assert skipped["below_floor"] == 1
     assert skipped["unknown_cap"] == 1
+
+
+def test_pending_buys_never_reaches_below_the_prune_cutoff(scoring_db, monkeypatch):
+    """Scoring a record the same run is about to prune would just burn tokens."""
+    monkeypatch.setattr(cn_ai_report, "cutoff_date", lambda: date(2026, 9, 5))
+    with SessionLocal() as s:
+        s.add_all([_buy(1, date(2026, 9, 8)), _buy(2, date(2026, 9, 4))])
+        s.commit()
+    items, _ = cn_ai_report._pending_buys(date(2026, 9, 8), lookback=7)
+    assert [i["id"] for i in items] == ["1"]
 
 
 def test_pending_buys_prefers_cn_companies_cap_over_the_stored_snapshot(scoring_db):
