@@ -8,6 +8,7 @@
       "match.any": "商品标题里含任一关键词就算候选（小写匹配）",
       "match.not": "含任一关键词就排除，用来挡掉『燕麦奶』混进『牛奶』这类误配",
       "match.all": "可选，必须同时包含全部关键词",
+      "emoji": "商品图标。真实抓取到商品图时优先用真图，没有真图就用这个 —— 保证每样东西都有图可看",
       "density": "可选，g/ml。调料这类「有的店按毫升卖、有的店按克卖」的商品需要它才能跨单位比价。不填就不换算 —— 系统不会自己猜密度"
     },
     "匹配不准怎么办": "网页『商品库』页面可以手动纠正/拉黑某个匹配，改动会存进数据库，之后抓取不会被覆盖。"
@@ -19,6 +20,7 @@
       "name": "全脂牛奶",
       "nameEn": "Whole Milk",
       "category": "乳制品",
+      "emoji": "🥛",
       "unit": "gal",
       "weekly": 1,
       "match": {
@@ -31,6 +33,7 @@
       "name": "鸡蛋（大号）",
       "nameEn": "Large Eggs",
       "category": "乳制品",
+      "emoji": "🥚",
       "unit": "dozen",
       "weekly": 1,
       "match": {
@@ -43,6 +46,7 @@
       "name": "希腊酸奶",
       "nameEn": "Greek Yogurt",
       "category": "乳制品",
+      "emoji": "🥣",
       "unit": "oz",
       "weekly": 32,
       "match": {
@@ -55,6 +59,7 @@
       "name": "老豆腐",
       "nameEn": "Firm Tofu",
       "category": "豆制品",
+      "emoji": "🫘",
       "unit": "oz",
       "weekly": 28,
       "match": {
@@ -68,6 +73,7 @@
       "name": "香蕉",
       "nameEn": "Bananas",
       "category": "水果",
+      "emoji": "🍌",
       "unit": "lb",
       "weekly": 2,
       "match": {
@@ -80,6 +86,7 @@
       "name": "牛油果",
       "nameEn": "Avocado",
       "category": "水果",
+      "emoji": "🥑",
       "unit": "each",
       "weekly": 2,
       "match": {
@@ -92,6 +99,7 @@
       "name": "草莓",
       "nameEn": "Strawberries",
       "category": "水果",
+      "emoji": "🍓",
       "unit": "lb",
       "weekly": 1,
       "match": {
@@ -104,6 +112,7 @@
       "name": "蓝莓",
       "nameEn": "Blueberries",
       "category": "水果",
+      "emoji": "🫐",
       "unit": "oz",
       "weekly": 12,
       "match": {
@@ -117,6 +126,7 @@
       "name": "上海青 / 小白菜",
       "nameEn": "Baby Bok Choy",
       "category": "蔬菜",
+      "emoji": "🥬",
       "unit": "lb",
       "weekly": 2,
       "match": {
@@ -129,6 +139,7 @@
       "name": "大白菜",
       "nameEn": "Napa Cabbage",
       "category": "蔬菜",
+      "emoji": "🥬",
       "unit": "lb",
       "weekly": 1.5,
       "match": {
@@ -141,6 +152,7 @@
       "name": "小葱",
       "nameEn": "Green Onion",
       "category": "蔬菜",
+      "emoji": "🌿",
       "unit": "each",
       "weekly": 2,
       "match": {
@@ -153,6 +165,7 @@
       "name": "生姜",
       "nameEn": "Ginger Root",
       "category": "蔬菜",
+      "emoji": "🫚",
       "unit": "lb",
       "weekly": 0.25,
       "match": {
@@ -165,6 +178,7 @@
       "name": "大蒜",
       "nameEn": "Garlic",
       "category": "蔬菜",
+      "emoji": "🧄",
       "unit": "lb",
       "weekly": 0.3,
       "match": {
@@ -177,6 +191,7 @@
       "name": "番茄",
       "nameEn": "Tomatoes",
       "category": "蔬菜",
+      "emoji": "🍅",
       "unit": "lb",
       "weekly": 2,
       "match": {
@@ -189,6 +204,7 @@
       "name": "黄瓜",
       "nameEn": "Cucumber",
       "category": "蔬菜",
+      "emoji": "🥒",
       "unit": "each",
       "weekly": 2,
       "match": {
@@ -201,6 +217,7 @@
       "name": "西兰花",
       "nameEn": "Broccoli",
       "category": "蔬菜",
+      "emoji": "🥦",
       "unit": "lb",
       "weekly": 1,
       "match": {
@@ -213,6 +230,7 @@
       "name": "土豆",
       "nameEn": "Potatoes",
       "category": "蔬菜",
+      "emoji": "🥔",
       "unit": "lb",
       "weekly": 1,
       "match": {
@@ -225,6 +243,7 @@
       "name": "洋葱",
       "nameEn": "Yellow Onion",
       "category": "蔬菜",
+      "emoji": "🧅",
       "unit": "lb",
       "weekly": 1,
       "match": {
@@ -237,6 +256,7 @@
       "name": "菠菜",
       "nameEn": "Spinach",
       "category": "蔬菜",
+      "emoji": "🥬",
       "unit": "each",
       "weekly": 1,
       "match": {
@@ -249,6 +269,7 @@
       "name": "香菇",
       "nameEn": "Shiitake Mushroom",
       "category": "蔬菜",
+      "emoji": "🍄",
       "unit": "lb",
       "weekly": 0.5,
       "match": {
@@ -262,6 +283,7 @@
       "name": "鸡胸肉",
       "nameEn": "Boneless Skinless Chicken Breast",
       "category": "肉类",
+      "emoji": "🍗",
       "unit": "lb",
       "weekly": 2,
       "match": {
@@ -274,6 +296,7 @@
       "name": "鸡腿肉",
       "nameEn": "Chicken Thigh",
       "category": "肉类",
+      "emoji": "🍗",
       "unit": "lb",
       "weekly": 1.5,
       "match": {
@@ -286,6 +309,7 @@
       "name": "五花肉",
       "nameEn": "Pork Belly",
       "category": "肉类",
+      "emoji": "🥓",
       "unit": "lb",
       "weekly": 0.75,
       "match": {
@@ -298,6 +322,7 @@
       "name": "猪肉馅",
       "nameEn": "Ground Pork",
       "category": "肉类",
+      "emoji": "🥩",
       "unit": "lb",
       "weekly": 1,
       "match": {
@@ -310,6 +335,7 @@
       "name": "牛肉馅",
       "nameEn": "Ground Beef",
       "category": "肉类",
+      "emoji": "🥩",
       "unit": "lb",
       "weekly": 1,
       "match": {
@@ -322,6 +348,7 @@
       "name": "肥牛卷（火锅片）",
       "nameEn": "Beef Hot Pot Slices",
       "category": "肉类",
+      "emoji": "🥩",
       "unit": "lb",
       "weekly": 0.5,
       "match": {
@@ -334,6 +361,7 @@
       "name": "三文鱼",
       "nameEn": "Salmon Fillet",
       "category": "海鲜",
+      "emoji": "🐟",
       "unit": "lb",
       "weekly": 1,
       "match": {
@@ -346,6 +374,7 @@
       "name": "虾",
       "nameEn": "Raw Shrimp",
       "category": "海鲜",
+      "emoji": "🦐",
       "unit": "lb",
       "weekly": 1,
       "match": {
@@ -359,6 +388,7 @@
       "name": "茉莉香米",
       "nameEn": "Jasmine Rice",
       "category": "主食",
+      "emoji": "🍚",
       "unit": "lb",
       "weekly": 2,
       "match": {
@@ -371,6 +401,7 @@
       "name": "面条",
       "nameEn": "Wheat Noodles",
       "category": "主食",
+      "emoji": "🍜",
       "unit": "oz",
       "weekly": 16,
       "match": {
@@ -383,6 +414,7 @@
       "name": "吐司面包",
       "nameEn": "Sandwich Bread",
       "category": "主食",
+      "emoji": "🍞",
       "unit": "each",
       "weekly": 1,
       "match": {
@@ -396,6 +428,7 @@
       "name": "生抽",
       "nameEn": "Soy Sauce",
       "category": "调料",
+      "emoji": "🫗",
       "unit": "floz",
       "density": 1.15,
       "weekly": 2,
@@ -409,6 +442,7 @@
       "name": "香油",
       "nameEn": "Toasted Sesame Oil",
       "category": "调料",
+      "emoji": "🫗",
       "unit": "floz",
       "density": 0.92,
       "weekly": 0.5,
@@ -422,6 +456,7 @@
       "name": "食用油",
       "nameEn": "Canola / Vegetable Oil",
       "category": "调料",
+      "emoji": "🫗",
       "unit": "floz",
       "density": 0.92,
       "weekly": 4,
@@ -435,6 +470,7 @@
       "name": "咖啡豆",
       "nameEn": "Whole Bean Coffee",
       "category": "饮品",
+      "emoji": "☕",
       "unit": "oz",
       "weekly": 8,
       "match": {

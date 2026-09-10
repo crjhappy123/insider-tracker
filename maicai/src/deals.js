@@ -5,7 +5,7 @@
 // 今天的单价 vs 这个商品过去 N 天的历史中位单价。
 // 挂了促销标但没比历史便宜的，单独归到「假促销」里告诉你，别被骗。
 
-import { latestSnapshots, priceHistory, loadCatalog, getStores, today } from './db.js';
+import { db, latestSnapshots, priceHistory, loadCatalog, getStores, today } from './db.js';
 
 const WINDOW_DAYS = 90;
 const REAL_DEAL_MIN = 0.08;   // 比历史中位便宜 8% 以上才算真降价
@@ -70,10 +70,12 @@ export function analyze({ day = null, windowDays = WINDOW_DAYS } = {}) {
       itemNameEn: item.nameEn,
       category: item.category,
       weekly: item.weekly,
+      sku: r.sku,
       title: r.title,
       brand: r.brand,
       size: r.size,
       url: r.url,
+      imageUrl: r.image_url,
       day: r.day,
       priceRegular: r.price_regular,
       pricePromo: r.price_promo,
@@ -244,6 +246,72 @@ export function compareAll(opts = {}) {
       };
     }),
   };
+}
+
+/**
+ * 每条价格的来源，按 sku 前缀判断。
+ * 必须能标到页面上：把编造的样本价和真实抓到的价格并排比较，
+ * 「最低」「降 43%」这些结论是无意义的 —— 公开站点不标出来就是误导。
+ */
+export function provenance(sku) {
+  const t = String(sku || '');
+  if (t.startsWith('SAMPLE-')) return 'sample';
+  if (t.startsWith('MANUAL-')) return 'manual';
+  if (t.startsWith('FLYER-')) return 'flyer';
+  return 'real';
+}
+
+/**
+ * 打折专区用：店里挂了促销标的全部商品，不管是真降价还是虚标。
+ *
+ * 和 todayDeals() 的分工：
+ *   todayDeals  跨店筛出真降价，按你家一周能省多少排序 —— 回答「今天该买什么」
+ *   allPromos   逛店视角，一家店挂了哪些促销全列出来 —— 回答「去这家店顺手买点什么」
+ * 所以这里不过滤 verdict，但每条都带着 verdict，界面上区分真降价和假促销。
+ */
+export function allPromos(opts = {}) {
+  const rows = analyze(opts);
+
+  // 同一个商品在同一家店可能有多个规格在促销，留降幅最大的那个
+  const best = new Map();
+  for (const r of rows) {
+    if (r.pricePromo == null || !(r.pricePromo < r.priceRegular)) continue;
+    const k = `${r.itemId}|${r.storeId}`;
+    const prev = best.get(k);
+    if (!prev || (r.discount ?? -1) > (prev.discount ?? -1)) best.set(k, r);
+  }
+
+  const promos = [...best.values()].map((r) => ({ ...r, src: provenance(r.sku) }));
+
+  // 店里在打折、但没匹配到常买清单的商品。逛超市本来就会顺手买点便宜的当季东西，
+  // 不该被「我的清单」框死。没有单价所以只显示标价，也不参与比价。
+  const otherPromos = db().prepare(`
+    SELECT p.store_id, p.sku, p.title, p.brand, p.size, p.image_url, p.url,
+           s.price_regular, s.price_promo, s.promo_text
+    FROM products p
+    JOIN snapshots s ON s.product_id = p.id
+      AND s.day = (SELECT MAX(day) FROM snapshots WHERE product_id = p.id)
+    LEFT JOIN matches m ON m.product_id = p.id
+    WHERE s.price_promo IS NOT NULL
+      AND s.price_promo < s.price_regular
+      AND (m.item_id IS NULL OR m.blocked = 1)
+    ORDER BY (s.price_regular - s.price_promo) / s.price_regular DESC
+    LIMIT 120
+  `).all().map((r) => ({
+    storeId: r.store_id,
+    title: r.title,
+    brand: r.brand,
+    size: r.size,
+    imageUrl: r.image_url,
+    url: r.url,
+    priceRegular: r.price_regular,
+    pricePromo: r.price_promo,
+    promoText: r.promo_text,
+    discount: (r.price_regular - r.price_promo) / r.price_regular,
+    src: provenance(r.sku),
+  }));
+
+  return { promos, otherPromos };
 }
 
 export const CONFIG = { WINDOW_DAYS, REAL_DEAL_MIN, FAKE_DEAL_MAX, MIN_HISTORY };

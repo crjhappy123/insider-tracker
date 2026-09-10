@@ -23,6 +23,7 @@ async function api(path, opts) {
 const apiProvider = {
   summary: () => api('/api/summary'),
   today: () => api('/api/today'),
+  promos: () => api('/api/promos'),
   compare: () => api('/api/compare'),
   item: (id) => api(`/api/item?id=${encodeURIComponent(id)}`),
   history: (pid, days) => api(`/api/history?productId=${pid}&days=${days}`),
@@ -79,6 +80,20 @@ const staticProvider = {
       runs: s.runs,
       today: s.day,
       generatedAt: s.generatedAt,
+      dataSources: s.dataSources,
+      hasSampleData: s.hasSampleData,
+      sampleCount: s.sampleCount,
+    };
+  },
+
+  // 打折专区：店里挂了促销标的全部商品（不管真假），加上清单外在打折的
+  async promos() {
+    const s = await snapshot();
+    return {
+      promos: s.rows
+        .filter((r) => r.pricePromo != null && r.pricePromo < r.priceRegular)
+        .map((r) => decorate(s, r)),
+      otherPromos: s.otherPromos ?? [],
     };
   },
 

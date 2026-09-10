@@ -44,6 +44,41 @@ function emptyState(title, hint) {
   return `<div class="empty"><p class="empty-title">${esc(title)}</p><p class="muted">${hint}</p></div>`;
 }
 
+
+const EMOJI_FALLBACK = '🛒';
+function emojiFor(itemId) {
+  return state.summary?.catalog.find((i) => i.id === itemId)?.emoji ?? EMOJI_FALLBACK;
+}
+
+/**
+ * 商品缩略图。有真实商品图就用真图，没有（或加载失败）就露出底下的图标。
+ * img 加载失败时浏览器不显示它，emoji 自然露出来，不需要 onerror 兜底。
+ */
+function thumb(imageUrl, emoji, cls = '') {
+  const inner = imageUrl
+    ? `<img src="${esc(imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+    : '';
+  return `<div class="thumb ${cls}" data-emoji="${esc(emoji || EMOJI_FALLBACK)}">${inner}</div>`;
+}
+
+/** 数据里还有编造的样本价时，必须显著提示 —— 不然公开站点等于在骗人 */
+function sampleNotice() {
+  const s = state.summary;
+  if (!s?.hasSampleData) return '';
+  const stores = Object.entries(s.dataSources || {})
+    .filter(([, v]) => v.sample)
+    .map(([id]) => storeName(id));
+  return `<div class="notice">
+    <span class="ico">⚠️</span>
+    <div>
+      <strong>这些价格里有 ${s.sampleCount} 条是样本数据，不是真实价格。</strong>
+      样本是按各店真实定价习惯编的，用来验证功能，<strong>别拿来做真的购买决定</strong>。
+      涉及门店：${stores.map((n) => esc(n)).join('、')}。
+      <br>真实数据要配好各店凭证后跑抓取才会替换掉它们，来源在每个价格旁边标着。
+    </div>
+  </div>`;
+}
+
 /* ---------- 启动 ---------- */
 init();
 
@@ -80,7 +115,7 @@ function route() {
   state.tab = tab;
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('on', b.dataset.tab === tab);
   main.innerHTML = '<div class="loading">加载中…</div>';
-  const fn = { today: renderToday, compare: renderCompare, basket: renderBasket, library: renderLibrary }[tab] ?? renderToday;
+  const fn = { today: renderToday, deals: renderDeals, compare: renderCompare, basket: renderBasket, library: renderLibrary }[tab] ?? renderToday;
   fn().catch((e) => { main.innerHTML = `<div class="empty"><p class="empty-title err">出错了</p><p class="muted">${esc(e.message)}</p></div>`; });
 }
 
@@ -160,6 +195,7 @@ async function renderToday() {
     <section class="block">
       <h2>今日促销</h2>
       <p class="subtitle">按「你家一周能省多少钱」排序，不是按折扣百分比 —— 每周都买的东西降 10% 比半年买一次的降 40% 更值得关注。</p>
+      ${sampleNotice()}
       ${tiles}
       ${dealsHtml}
       ${fake}
@@ -191,16 +227,156 @@ function dealCard(r) {
 
   return `
     <article class="deal" data-item="${esc(r.itemId)}" tabindex="0">
-      <div>
+      <div style="display:flex;gap:11px;align-items:flex-start;min-width:0">
+        ${thumb(r.imageUrl, emojiFor(r.itemId))}
+        <div style="min-width:0">
         <div class="name">${esc(r.itemName)}</div>
         <div class="where">${esc(r.storeName)} · 每周约买 ${r.weekly} ${esc(unitZh(r.unit))}</div>
         <div class="title-en">${titleWithSize(r.title, r.size)}</div>
         <div class="badges">${badges.join('')}</div>
+        </div>
       </div>
       <div class="right">
         <div class="unit-now num">${perUnit(r.unitPrice, r.unit)}</div>
         <div class="unit-was num">平时 ${perUnit(r.medianUnitPrice, r.unit)}</div>
         ${save}
+      </div>
+    </article>`;
+}
+
+
+/* ================= 打折专区 ================= */
+// 按超市分组看「这家店今天在打折什么」。和「今日促销」的区别：
+//   今日促销 = 跨店筛出真降价，按你家一周能省多少排序（决定「今天该买什么」）
+//   打折专区 = 逛店视角，一家一家看它挂了哪些促销（决定「去这家店顺手买点什么」）
+// 所以这里把店里挂的促销全列出来，但明确标出哪些是真降价、哪些是假促销。
+async function renderDeals() {
+  const [p, cmp] = await Promise.all([DATA.promos(), DATA.compare()]);
+  const snap = state.summary;
+
+  // 用比价数据算出每样东西当前哪家最便宜，卡片上标「全场最低」
+  const cheapest = new Map();
+  for (const row of cmp.rows) {
+    const lo = row.cells.filter(Boolean).find((c) => c.isLowest);
+    if (lo) cheapest.set(row.itemId, lo.storeId);
+  }
+
+  // 店里挂了促销标的全部商品，按店分组
+  const promos = p.promos;
+  const byStore = new Map();
+  for (const r of promos) {
+    if (!byStore.has(r.storeId)) byStore.set(r.storeId, []);
+    byStore.get(r.storeId).push(r);
+  }
+
+  const others = new Map();
+  for (const o of p.otherPromos ?? []) {
+    if (!others.has(o.storeId)) others.set(o.storeId, []);
+    others.get(o.storeId).push(o);
+  }
+
+  const stores = snap.stores.filter((s) => (byStore.get(s.id)?.length || others.get(s.id)?.length));
+  if (stores.length === 0) {
+    main.innerHTML = emptyState('今天各店都没有促销', '或者还没抓到数据。跑 <code>npm run ingest</code> 试试。');
+    return;
+  }
+
+  const active = state.dealStore ?? 'all';
+  const chips = [
+    `<button class="chip ${active === 'all' ? 'on' : ''}" data-store="all">全部 <span class="n">${promos.length}</span></button>`,
+    ...stores.map((s) => {
+      const n = (byStore.get(s.id)?.length || 0) + (others.get(s.id)?.length || 0);
+      return `<button class="chip ${active === s.id ? 'on' : ''}" data-store="${esc(s.id)}">${esc(s.nameZh || s.name)} <span class="n">${n}</span></button>`;
+    }),
+  ].join('');
+
+  const shown = active === 'all' ? stores : stores.filter((s) => s.id === active);
+
+  const blocks = shown.map((s) => {
+    const list = (byStore.get(s.id) ?? []).slice().sort((a, b) => (b.discount ?? 0) - (a.discount ?? 0));
+    const real = list.filter((r) => r.verdict === 'real');
+    const save = real.reduce((a, r) => a + (r.weeklySaving || 0), 0);
+    const off = others.get(s.id) ?? [];
+
+    return `
+      <section class="store-block">
+        <header>
+          <h3>${esc(s.nameZh || s.name)}</h3>
+          <span class="meta">单程 ${s.driveMinutes} 分${s.branch ? ` · ${esc(s.branch)}` : ''}</span>
+          <span class="meta">在打折 ${list.length} 样，其中真降价 ${real.length} 样</span>
+          ${save > 0.01 ? `<span class="tot">按你家用量一周省 ${money(save)}</span>` : ''}
+        </header>
+        ${list.length ? `<div class="deal-grid">${list.map((r) => dealTile(r, cheapest.get(r.itemId) === r.storeId)).join('')}</div>`
+                      : '<p class="muted" style="margin:0">常买清单里的东西这家今天没打折。</p>'}
+        ${off.length ? `
+          <details class="fold">
+            <summary>清单外还有 ${off.length} 样在打折 —— 顺手看看</summary>
+            <div class="deal-grid" style="margin-top:8px">${off.slice(0, 24).map(offTile).join('')}</div>
+          </details>` : ''}
+      </section>`;
+  }).join('');
+
+  main.innerHTML = `
+    <section class="block">
+      <h2>打折专区</h2>
+      <p class="subtitle">按超市分开看，每家今天挂了哪些促销。<strong>挂促销标不等于真便宜</strong> —— 和过去 90 天的中位价比过之后，真降价的标绿、只是虚标的标黄。</p>
+      ${sampleNotice()}
+      <div class="store-filter">${chips}</div>
+      ${blocks}
+    </section>`;
+
+  for (const c of main.querySelectorAll('.chip[data-store]')) {
+    c.addEventListener('click', () => { state.dealStore = c.dataset.store; renderDeals(); });
+  }
+  for (const el of main.querySelectorAll('.dcard[data-item]')) {
+    el.addEventListener('click', () => openItem(el.dataset.item));
+  }
+}
+
+function dealTile(r, isCheapest) {
+  const badges = [];
+  if (r.verdict === 'real') badges.push(`<span class="badge good"><span class="dot"></span>比平时便宜 ${pct(r.discount)}</span>`);
+  else if (r.verdict === 'fake') badges.push(`<span class="badge warn"><span class="dot"></span>假促销，只便宜 ${pct(Math.max(0, r.discount ?? 0))}</span>`);
+  else badges.push(`<span class="badge">历史不足，判断不了</span>`);
+  if (r.isLowestEver) badges.push(`<span class="badge good"><span class="dot"></span>历史最低</span>`);
+  if (isCheapest) badges.push(`<span class="badge">全场最低</span>`);
+  // 起买量提醒：Costco 在打折专区里最显眼，但「单价最低」常常是以整箱起买为代价的
+  if (Number.isFinite(r.packQty) && r.packQty > (r.weekly || 0) * 2) {
+    badges.push(`<span class="badge warn"><span class="dot"></span>整包 ${+r.packQty.toFixed(1)} ${esc(unitZh(r.unit))}</span>`);
+  }
+  if (r.src === 'sample') badges.push(`<span class="badge warn"><span class="dot"></span>样本价</span>`);
+
+  const eff = r.pricePromo ?? r.priceRegular;
+  return `
+    <article class="dcard" data-item="${esc(r.itemId)}" tabindex="0">
+      ${thumb(r.imageUrl, emojiFor(r.itemId))}
+      <div class="body">
+        <div class="nm">${esc(r.itemName)}</div>
+        <div class="sub">${titleWithSize(r.title, r.size)}</div>
+        <div class="prices">
+          <span class="now">${money(eff)}</span>
+          ${r.pricePromo != null && r.priceRegular ? `<span class="was">${money(r.priceRegular)}</span>` : ''}
+          <span class="per">${perUnit(r.unitPrice, r.unit)}</span>
+        </div>
+        <div class="badges">${badges.join('')}</div>
+      </div>
+    </article>`;
+}
+
+/** 清单外的打折商品：没有单价、不参与比价，只显示店里的标价 */
+function offTile(o) {
+  return `
+    <article class="dcard plain">
+      ${thumb(o.imageUrl, EMOJI_FALLBACK)}
+      <div class="body">
+        <div class="nm" style="font-size:13px">${esc(o.title)}</div>
+        <div class="sub">${o.size ? esc(o.size) : ''}${o.promoText ? ` · ${esc(o.promoText)}` : ''}</div>
+        <div class="prices">
+          <span class="now">${money(o.pricePromo)}</span>
+          <span class="was">${money(o.priceRegular)}</span>
+          <span class="per">降 ${pct(o.discount)}</span>
+        </div>
+        <div class="badges"><span class="badge">不在常买清单，没算单价</span></div>
       </div>
     </article>`;
 }
@@ -265,7 +441,7 @@ function compareRow(r) {
 
   return `
     <tr class="clickable" data-item="${esc(r.itemId)}">
-      <td><strong>${esc(r.itemName)}</strong><br><span class="muted" style="font-size:11px">${esc(r.nameEn)}</span></td>
+      <td><span style="display:inline-flex;align-items:center;gap:8px">${thumb(null, r.emoji ?? emojiFor(r.itemId), 'sm')}<span><strong>${esc(r.itemName)}</strong><br><span class="muted" style="font-size:11px">${esc(r.nameEn)}</span></span></span></td>
       <td class="muted">每${esc(unitZh(r.unit))}</td>
       ${cells}
     </tr>`;
@@ -552,7 +728,8 @@ function itemName(itemId) {
 async function openItem(itemId) {
   const drawer = $('#drawer');
   drawer.hidden = false;
-  $('#drawerTitle').textContent = itemName(itemId);
+  $('#drawerTitle').innerHTML =
+    `<span style="display:inline-flex;align-items:center;gap:10px">${thumb(null, emojiFor(itemId), 'lg')}<span>${esc(itemName(itemId))}</span></span>`;
   $('#drawerBody').innerHTML = '<div class="loading">加载中…</div>';
 
   let d;

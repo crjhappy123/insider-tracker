@@ -8,7 +8,7 @@ import {
   ROOT, syncStores, loadCatalog, loadStoresConfig, getStores, lastRuns,
   getBasket, setBasket, setMatch, productsForItem, searchProducts, fullHistory, today,
 } from './db.js';
-import { todayDeals, compareAll, compareItem, CONFIG } from './deals.js';
+import { todayDeals, compareAll, compareItem, allPromos, provenance, analyze, CONFIG } from './deals.js';
 import { planBasket, defaultBasket } from './basket.js';
 import { describeAll } from './scrapers/index.js';
 
@@ -73,6 +73,20 @@ async function serveStatic(res, urlPath) {
   }
 }
 
+/** 数据来源汇总。页面要据此提示「这里面有多少是编造的样本价」。 */
+function sourceSummary() {
+  const sources = {};
+  let sampleCount = 0;
+  for (const r of analyze()) {
+    if (!Number.isFinite(r.unitPrice)) continue;
+    const src = provenance(r.sku);
+    sources[r.storeId] ??= {};
+    sources[r.storeId][src] = (sources[r.storeId][src] || 0) + 1;
+    if (src === 'sample') sampleCount++;
+  }
+  return { dataSources: sources, hasSampleData: sampleCount > 0, sampleCount };
+}
+
 const routes = {
   'GET /api/summary': () => {
     const cfg = loadStoresConfig();
@@ -85,7 +99,8 @@ const routes = {
         driveMinutes: s.drive_minutes, source: s.source,
       })),
       catalog: catalog.map((i) => ({
-        id: i.id, name: i.name, nameEn: i.nameEn, category: i.category, unit: i.unit, weekly: i.weekly,
+        id: i.id, name: i.name, nameEn: i.nameEn, category: i.category,
+        unit: i.unit, weekly: i.weekly, emoji: i.emoji,
       })),
       categories: [...new Set(catalog.map((i) => i.category))],
       tripCost: cfg.tripCost,
@@ -93,10 +108,13 @@ const routes = {
       scrapers: describeAll(),
       runs: runs.map((r) => ({ ts: r.ts, storeId: r.store_id, ok: !!r.ok, count: r.product_count, message: r.message })),
       today: today(),
+      ...sourceSummary(),
     };
   },
 
   'GET /api/today': (q) => todayDeals({ day: q.get('day') || null }),
+
+  'GET /api/promos': () => allPromos(),
 
   'GET /api/compare': () => compareAll(),
 

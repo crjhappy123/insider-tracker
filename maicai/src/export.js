@@ -19,7 +19,7 @@ import { mkdirSync, writeFileSync, cpSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ROOT, loadCatalog, loadStoresConfig, getStores, syncStores, fullHistory, today, lastRuns } from './db.js';
-import { analyze, CONFIG } from './deals.js';
+import { analyze, allPromos, provenance, CONFIG } from './deals.js';
 import { describeAll } from './scrapers/index.js';
 
 const HISTORY_DAYS = 120;
@@ -68,6 +68,7 @@ export function buildSnapshot() {
     brand: r.brand,
     size: r.size,
     url: r.url,
+    imageUrl: r.imageUrl,
     unitPrice: round(r.unitPrice, 5),
     unit: r.unit,
     unitBasis: r.unitBasis,
@@ -86,7 +87,18 @@ export function buildSnapshot() {
     historyDays: r.historyDays,
     matchScore: round(r.matchScore, 3),
     matchOrigin: r.matchOrigin,
+    src: provenance(r.sku),
   }));
+
+  // 按门店汇总数据来源，页面顶部据此提示
+  const sources = {};
+  for (const r of compact) {
+    sources[r.storeId] ??= {};
+    sources[r.storeId][r.src] = (sources[r.storeId][r.src] || 0) + 1;
+  }
+  const sampleCount = compact.filter((r) => r.src === 'sample').length;
+
+  const { otherPromos } = allPromos();
 
   const runs = lastRuns(12).map((r) => ({
     ts: r.ts, storeId: r.store_id, ok: !!r.ok, count: r.product_count, message: r.message,
@@ -104,13 +116,18 @@ export function buildSnapshot() {
     })),
     catalog: catalog.map((i) => ({
       id: i.id, name: i.name, nameEn: i.nameEn, category: i.category,
-      unit: i.unit, weekly: i.weekly, density: i.density,
+      unit: i.unit, weekly: i.weekly, density: i.density, emoji: i.emoji,
     })),
     categories: [...new Set(catalog.map((i) => i.category))],
     scrapers: describeAll(),
     runs,
     rows: compact,
     uncomparable,
+    otherPromos,
+    dataSources: sources,
+    // 只要还有编造的样本价，页面必须显著提示
+    hasSampleData: sampleCount > 0,
+    sampleCount,
   };
 }
 
@@ -180,4 +197,5 @@ function patchHtml(path) {
 
 // 用 pathToFileURL 比拼 `file://${argv[1]}` 可靠：项目路径含中文时后者会因为
 // import.meta.url 里是百分号编码而永远不相等，脚本会静默什么都不做。
-if (import.meta.url === pathToFileURL(process.argv[1]).href) main();
+// argv[1] 在 `node -e` / 被 import 时是 undefined，要先判断
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

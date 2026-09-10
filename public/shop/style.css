@@ -331,3 +331,114 @@ select, input[type="text"] {
 .match-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--grid); font-size: 13px; }
 .match-row:last-child { border-bottom: 0; }
 .match-row.blocked { opacity: 0.5; }
+
+/* ---------- 商品图 ---------- */
+/* 有真实商品图就用真图，没有就露出底下的图标 ——
+   img 加载失败时它自己不显示，emoji 自然露出来，不需要 JS 兜底 */
+.thumb {
+  position: relative;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+  background: var(--wash);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+.thumb::before {
+  content: attr(data-emoji);
+  font-size: 22px;
+  line-height: 1;
+}
+.thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--surface-1);
+}
+.thumb.lg { width: 60px; height: 60px; border-radius: 10px; }
+.thumb.lg::before { font-size: 28px; }
+.thumb.sm { width: 34px; height: 34px; border-radius: 7px; }
+.thumb.sm::before { font-size: 17px; }
+
+/* ---------- 打折专区 ---------- */
+.store-filter { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+.chip {
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 5px 13px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chip:hover { background: var(--wash); color: var(--text-primary); }
+.chip.on { background: var(--text-primary); color: var(--surface-1); border-color: var(--text-primary); font-weight: 600; }
+.chip .n { font-variant-numeric: tabular-nums; opacity: 0.7; }
+
+.store-block { margin-bottom: 26px; }
+.store-block > header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--axis);
+}
+.store-block h3 { margin: 0; font-size: 15px; }
+.store-block .meta { color: var(--text-muted); font-size: 12px; }
+.store-block .tot { margin-left: auto; font-size: 13px; color: var(--good-text); font-weight: 600; }
+
+.deal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); gap: 10px; }
+.dcard {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 11px 12px;
+  cursor: pointer;
+}
+.dcard:hover { background: var(--wash); }
+.dcard.plain { cursor: default; }
+.dcard .body { min-width: 0; flex: 1; }
+.dcard .nm { font-weight: 600; font-size: 14px; }
+.dcard .sub {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dcard .prices { display: flex; align-items: baseline; gap: 7px; margin-top: 5px; flex-wrap: wrap; }
+.dcard .now { font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.dcard .was { color: var(--text-muted); font-size: 12px; text-decoration: line-through; font-variant-numeric: tabular-nums; }
+.dcard .per { color: var(--text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
+.dcard .badges { margin-top: 5px; }
+
+/* 数据来源提示条：编造的样本价不能不声不响地混在真实价格里 */
+.notice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid color-mix(in srgb, var(--warning) 55%, transparent);
+  background: color-mix(in srgb, var(--warning) 9%, transparent);
+  border-radius: var(--radius);
+  padding: 11px 14px;
+  margin-bottom: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.notice .ico { flex: 0 0 auto; font-size: 15px; line-height: 1.35; }
+.notice strong { color: var(--text-primary); }
