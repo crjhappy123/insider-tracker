@@ -1,0 +1,33 @@
+{
+  "_说明": [
+    "改名成 boohan.json 就生效。",
+    "",
+    "这里的价格是从 Boo Han 2026-09-04 ~ 09-10 那期周报上抄下来的真实价格（周报原图在",
+    "data/flyers/boohan/weeklyad-1.jpg）。只抄了能对上 catalog.json 的那些 —— 周报上还有",
+    "四十多样韩式商品（소주、번데기、자장면 之类），你想比价就往 catalog.json 里加对应条目。",
+    "",
+    "有 ANTHROPIC_API_KEY 的话不用手抄：`npm run ingest -- --stores=boohan` 会自动下周报图",
+    "并用视觉模型读出来，一周一次调用，提取结果按图片哈希缓存，同一期不重复花钱。",
+    "",
+    "priceUnit=lb 表示按磅散卖（周报上标 LB）；标 EA/BOX/PK/BUN 的填 size 写清整份规格。"
+  ],
+
+  "products": [
+    { "title": "Peeled Garlic", "size": "3 lb", "priceRegular": 7.19, "promoText": "Weekly Ad 9/4-9/10" },
+    { "title": "Spinach", "size": "1 bunch", "priceRegular": 1.09, "promoText": "Weekly Ad 9/4-9/10" },
+    { "title": "Sliced Beef Bulgogi", "priceUnit": "lb", "priceRegular": 6.99, "promoText": "Weekly Ad 9/4-9/10 · Fri-Mon" },
+    { "title": "Sliced Pork Jowl", "priceUnit": "lb", "priceRegular": 6.99, "promoText": "Weekly Ad 9/4-9/10 · Fri-Mon" },
+    { "title": "Beef Soup Bone", "priceUnit": "lb", "priceRegular": 1.99, "promoText": "Weekly Ad 9/4-9/10" },
+
+    { "brand": "Sempio", "title": "Sempio Wheat Noodles Chewy and Thin", "size": "1.5 kg", "priceRegular": 8.99, "pricePromo": 7.49, "promoText": "Weekly Ad 9/4-9/10" },
+    { "brand": "Sempio", "title": "Sempio Seasoned Soy Sauce for Soup and Braising", "size": "450 g", "priceRegular": 5.99, "pricePromo": 3.99, "promoText": "Weekly Ad 9/4-9/10" },
+
+    { "title": "Grey Squash", "priceUnit": "lb", "priceRegular": 0.79, "promoText": "Weekly Ad 9/4-9/10" },
+    { "title": "Kabocha Squash", "priceUnit": "lb", "priceRegular": 0.79, "promoText": "Weekly Ad 9/4-9/10" },
+    { "title": "Organic Brown Onion", "size": "3 lb", "priceRegular": 3.79, "promoText": "Weekly Ad 9/4-9/10" },
+    { "title": "Rainbow Bell Pepper", "size": "1 pk", "priceRegular": 3.79, "promoText": "Weekly Ad 9/4-9/10" },
+    { "title": "Baby King Oyster Mushroom", "size": "1 pk", "priceRegular": 1.39, "promoText": "Weekly Ad 9/4-9/10" },
+    { "title": "Korean Pepper", "priceUnit": "lb", "priceRegular": 1.79, "promoText": "Weekly Ad 9/4-9/10" },
+    { "title": "Green Leaf Lettuce", "size": "1 bunch", "priceRegular": 0.99, "promoText": "Weekly Ad 9/4-9/10" }
+  ]
+}

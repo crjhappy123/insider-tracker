@@ -1,0 +1,30 @@
+{
+  "_说明": [
+    "把这个文件改名成 costco.json 就生效（.example.json 不会被读取）。",
+    "Costco 的价格必须手动记，原因写在 src/scrapers/costco.js 顶部：官网封锁自动访问，",
+    "而且仓库店内价从来不在网上公开 —— costco.com 的线上价比店内高，拿来比价是错的。",
+    "好消息是 Costco 价格很稳，买完看小票录一次，一个月更一次就够。",
+    "",
+    "字段：",
+    "  title         商品名，随便写，但要能被 catalog.json 的 match.any 关键词匹配上（用英文最稳）",
+    "  size          包装规格。写清楚很重要 —— 比价靠它换算单价，也靠它算起买量",
+    "  priceUnit     按磅散卖的填 \"lb\"，这时不用填 size",
+    "  priceRegular  平时价",
+    "  pricePromo    在促销时的价，没促销就不填"
+  ],
+
+  "products": [
+    { "title": "Kirkland Signature Organic Strawberries", "size": "4 lb", "priceRegular": 11.99 },
+    { "title": "Kirkland Signature Whole Milk", "size": "2 x 1 gal", "priceRegular": 6.49 },
+    { "title": "Kirkland Signature Large Eggs", "size": "24 ct", "priceRegular": 7.29 },
+    { "title": "Boneless Skinless Chicken Breast", "priceUnit": "lb", "priceRegular": 3.49 },
+    { "title": "Ground Beef 88% Lean", "priceUnit": "lb", "priceRegular": 4.99 },
+    { "title": "Atlantic Salmon Fillet", "priceUnit": "lb", "priceRegular": 9.99 },
+    { "title": "Kirkland Signature Jasmine Rice", "size": "25 lb", "priceRegular": 21.99 },
+    { "title": "Kirkland Signature Canola Oil", "size": "3 qt", "priceRegular": 12.99 },
+    { "title": "Kirkland Signature Whole Bean Coffee", "size": "2 lb", "priceRegular": 17.99 },
+    { "title": "Bananas", "size": "3 lb", "priceRegular": 1.99 },
+    { "title": "Avocado", "size": "6 ct", "priceRegular": 6.99 },
+    { "title": "Blueberries", "size": "18 oz", "priceRegular": 7.49, "pricePromo": 5.99 }
+  ]
+}
