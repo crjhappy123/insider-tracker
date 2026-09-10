@@ -16,8 +16,9 @@
 //   npm run export -- --out=<目录>      导出到别处（部署时指向 stock 仓库的 public/shop）
 
 import { mkdirSync, writeFileSync, cpSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
 import { ROOT, loadCatalog, loadStoresConfig, getStores, syncStores, fullHistory, today, lastRuns } from './db.js';
 import { analyze, allPromos, provenance, CONFIG } from './deals.js';
 import { describeAll } from './scrapers/index.js';
@@ -152,7 +153,10 @@ function round(n, d) {
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
-  const outDir = args.out ? join(ROOT, String(args.out)) : join(ROOT, 'dist', 'shop');
+  // --out 允许绝对路径，也允许相对项目根的路径
+  const outDir = args.out
+    ? (isAbsolute(String(args.out)) ? String(args.out) : join(ROOT, String(args.out)))
+    : join(ROOT, 'dist', 'shop');
 
   const snapshot = buildSnapshot();
   if (snapshot.rows.length === 0) {
@@ -168,7 +172,7 @@ function main() {
     cpSync(join(ROOT, 'web', f), join(outDir, f));
   }
   // 静态模式的标记：app.js 靠它决定读 JSON 还是打 API
-  patchHtml(join(outDir, 'index.html'));
+  patchHtml(join(outDir, 'index.html'), outDir);
 
   const snapPath = join(outDir, 'data', 'snapshot.json');
   const histPath = join(outDir, 'data', 'history.json');
@@ -185,13 +189,27 @@ function main() {
   console.log(`\n数据日期 ${snapshot.day}：真降价 ${real} 个，假促销 ${fake} 个`);
 }
 
-/** 在 <body> 上打个静态模式标记，并把绝对路径改成相对路径（站点挂在 /shop/ 子路径下） */
-function patchHtml(path) {
+/**
+ * 处理 index.html：
+ *  1. 打上静态模式标记
+ *  2. 绝对路径改相对路径（站点挂在 /shop/ 子路径下）
+ *  3. 给 js/css 加上内容指纹查询串
+ *
+ * 第 3 条是必须的：Cloudflare Pages 给 .js 的 Cache-Control 是 max-age=14400，
+ * 也就是浏览器会缓存 4 小时。加了新功能重新发布后，回访用户拿到的还是旧 app.js，
+ * 界面上看不到新东西还得手动硬刷新。指纹变了 URL 就变，缓存自动失效。
+ * index.html 本身是 max-age=0 每次都校验，所以指纹总能及时拿到。
+ */
+function patchHtml(path, outDir) {
+  const fp = (f) => {
+    const h = createHash('sha1').update(readFileSync(join(outDir, f))).digest('hex').slice(0, 8);
+    return `./${f}?v=${h}`;
+  };
   let html = readFileSync(path, 'utf8');
   html = html
     .replace('<body ', '<body data-mode="static" ')
-    .replace('href="/style.css"', 'href="./style.css"')
-    .replace('src="/app.js"', 'src="./app.js"');
+    .replace('href="/style.css"', `href="${fp('style.css')}"`)
+    .replace('src="/app.js"', `src="${fp('app.js')}"`);
   writeFileSync(path, html);
 }
 

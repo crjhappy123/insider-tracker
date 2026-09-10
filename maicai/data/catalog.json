@@ -8,6 +8,7 @@
       "match.any": "商品标题里含任一关键词就算候选（小写匹配）",
       "match.not": "含任一关键词就排除，用来挡掉『燕麦奶』混进『牛奶』这类误配",
       "match.all": "可选，必须同时包含全部关键词",
+      "priceRange": "合理单价区间 [下限, 上限]，按这个商品的 unit 算。真实抓取会搜回来「Pocky 草莓棒」当草莓、「Napa Cabbage Seeds（菜种子）」当大白菜这种东西，单价差一个数量级。关键词黑名单永远补不完，这个区间是兜底 —— 超出范围的不参与比价。设宽松点就行，目的是挡数量级错误，不是卡精确价格",
       "emoji": "商品图标。真实抓取到商品图时优先用真图，没有真图就用这个 —— 保证每样东西都有图可看",
       "density": "可选，g/ml。调料这类「有的店按毫升卖、有的店按克卖」的商品需要它才能跨单位比价。不填就不换算 —— 系统不会自己猜密度"
     },
@@ -22,6 +23,7 @@
       "category": "乳制品",
       "emoji": "🥛",
       "unit": "gal",
+      "priceRange": [1.5, 9],
       "weekly": 1,
       "match": {
         "any": ["whole milk", "vitamin d milk", "milk, whole"],
@@ -35,6 +37,7 @@
       "category": "乳制品",
       "emoji": "🥚",
       "unit": "dozen",
+      "priceRange": [1.5, 12],
       "weekly": 1,
       "match": {
         "any": ["large eggs", "eggs, large", "grade a eggs", "large white eggs", "large brown eggs"],
@@ -48,6 +51,7 @@
       "category": "乳制品",
       "emoji": "🥣",
       "unit": "oz",
+      "priceRange": [0.05, 0.5],
       "weekly": 32,
       "match": {
         "any": ["greek yogurt", "greek nonfat yogurt", "plain greek"],
@@ -61,6 +65,7 @@
       "category": "豆制品",
       "emoji": "🫘",
       "unit": "oz",
+      "priceRange": [0.03, 0.4],
       "weekly": 28,
       "match": {
         "any": ["firm tofu", "tofu firm", "extra firm tofu", "medium firm tofu"],
@@ -75,10 +80,11 @@
       "category": "水果",
       "emoji": "🍌",
       "unit": "lb",
+      "priceRange": [0.15, 2.5],
       "weekly": 2,
       "match": {
         "any": ["banana"],
-        "not": ["chip", "bread", "dried", "plantain", "pudding", "candy", "milk", "leaf", "flavored", "muffin", "mix", "chocolate", "cake", "smoothie"]
+        "not": ["chip", "bread", "dried", "plantain", "pudding", "candy", "milk", "leaf", "flavored", "muffin", "mix", "chocolate", "cake", "smoothie", "chocopie", "pocky", "gummy", "sauce", "blossom", "cream", "kick", "pie", "snack", "cracker", "biscuit", "wafer"]
       }
     },
     {
@@ -88,6 +94,7 @@
       "category": "水果",
       "emoji": "🥑",
       "unit": "each",
+      "priceRange": [0.4, 4],
       "weekly": 2,
       "match": {
         "any": ["avocado"],
@@ -101,10 +108,11 @@
       "category": "水果",
       "emoji": "🍓",
       "unit": "lb",
+      "priceRange": [0.8, 9],
       "weekly": 1,
       "match": {
         "any": ["strawberr"],
-        "not": ["frozen", "jam", "preserve", "dried", "yogurt", "ice cream", "flavored", "candy", "syrup"]
+        "not": ["frozen", "jam", "preserve", "dried", "yogurt", "ice cream", "flavored", "candy", "syrup", "pocky", "biscuit", "waffle", "puff", "pie", "noir", "dessert", "drink", "juice", "snack", "cracker", "wafer", "goober", "jelly", "peanut", "spread", "filling"]
       }
     },
     {
@@ -114,6 +122,7 @@
       "category": "水果",
       "emoji": "🫐",
       "unit": "oz",
+      "priceRange": [0.1, 1.2],
       "weekly": 12,
       "match": {
         "any": ["blueberr"],
@@ -128,6 +137,7 @@
       "category": "蔬菜",
       "emoji": "🥬",
       "unit": "lb",
+      "priceRange": [0.5, 6],
       "weekly": 2,
       "match": {
         "any": ["baby bok choy", "shanghai bok choy", "bok choy baby", "baby shanghai"],
@@ -141,10 +151,11 @@
       "category": "蔬菜",
       "emoji": "🥬",
       "unit": "lb",
+      "priceRange": [0.3, 4],
       "weekly": 1.5,
       "match": {
         "any": ["napa cabbage", "nappa cabbage", "chinese cabbage"],
-        "not": ["kimchi", "pickled", "frozen", "dried", "salad kit"]
+        "not": ["kimchi", "pickled", "frozen", "dried", "salad kit", "seed", "seeds"]
       }
     },
     {
@@ -154,10 +165,11 @@
       "category": "蔬菜",
       "emoji": "🌿",
       "unit": "each",
+      "priceRange": [0.2, 3],
       "weekly": 2,
       "match": {
         "any": ["green onion", "scallion"],
-        "not": ["dried", "powder", "frozen", "pancake", "oil", "dip", "flavored", "cracker"]
+        "not": ["dried", "powder", "frozen", "pancake", "oil", "dip", "flavored", "cracker", "dumpling", "bun", "wonton", "roll", "noodle", "ndl", "pork", "beef", "chicken", "cake"]
       }
     },
     {
@@ -167,6 +179,7 @@
       "category": "蔬菜",
       "emoji": "🫚",
       "unit": "lb",
+      "priceRange": [0.8, 9],
       "weekly": 0.25,
       "match": {
         "any": ["ginger root", "fresh ginger", "ginger, fresh", "young ginger"],
@@ -180,10 +193,11 @@
       "category": "蔬菜",
       "emoji": "🧄",
       "unit": "lb",
+      "priceRange": [1, 14],
       "weekly": 0.3,
       "match": {
         "any": ["garlic"],
-        "not": ["powder", "salt", "bread", "sauce", "paste", "minced", "peeled", "black garlic", "chili", "oil", "spread", "dressing"]
+        "not": ["powder", "salt", "bread", "sauce", "paste", "minced", "peeled", "black garlic", "chili", "oil", "spread", "dressing", "flv", "flavor", "flavored", "peas", "snack", "chips", "crackers", "roasted"]
       }
     },
     {
@@ -193,6 +207,7 @@
       "category": "蔬菜",
       "emoji": "🍅",
       "unit": "lb",
+      "priceRange": [0.5, 7],
       "weekly": 2,
       "match": {
         "any": ["tomato", "tomatoes"],
@@ -206,6 +221,7 @@
       "category": "蔬菜",
       "emoji": "🥒",
       "unit": "each",
+      "priceRange": [0.2, 4],
       "weekly": 2,
       "match": {
         "any": ["cucumber", "persian cucumber", "english cucumber"],
@@ -219,6 +235,7 @@
       "category": "蔬菜",
       "emoji": "🥦",
       "unit": "lb",
+      "priceRange": [0.6, 7],
       "weekly": 1,
       "match": {
         "any": ["broccoli"],
@@ -232,6 +249,7 @@
       "category": "蔬菜",
       "emoji": "🥔",
       "unit": "lb",
+      "priceRange": [0.3, 4],
       "weekly": 1,
       "match": {
         "any": ["russet potato", "yukon potato", "gold potato", "potatoes"],
@@ -245,6 +263,7 @@
       "category": "蔬菜",
       "emoji": "🧅",
       "unit": "lb",
+      "priceRange": [0.3, 4],
       "weekly": 1,
       "match": {
         "any": ["yellow onion", "sweet onion", "onions, yellow"],
@@ -258,10 +277,11 @@
       "category": "蔬菜",
       "emoji": "🥬",
       "unit": "each",
+      "priceRange": [0.4, 5],
       "weekly": 1,
       "match": {
         "any": ["spinach"],
-        "not": ["frozen", "creamed", "dip", "artichoke", "canned", "powder", "juice", "salad kit", "puff"]
+        "not": ["frozen", "creamed", "dip", "artichoke", "canned", "powder", "juice", "salad kit", "puff", "dumpling", "bun", "wonton", "noodle", "ndl", "pork", "shrimp", "bucket"]
       }
     },
     {
@@ -271,6 +291,7 @@
       "category": "蔬菜",
       "emoji": "🍄",
       "unit": "lb",
+      "priceRange": [2, 20],
       "weekly": 0.5,
       "match": {
         "any": ["shiitake"],
@@ -285,6 +306,7 @@
       "category": "肉类",
       "emoji": "🍗",
       "unit": "lb",
+      "priceRange": [1.5, 12],
       "weekly": 2,
       "match": {
         "any": ["boneless skinless chicken breast", "chicken breast boneless", "chicken breasts, boneless"],
@@ -298,6 +320,7 @@
       "category": "肉类",
       "emoji": "🍗",
       "unit": "lb",
+      "priceRange": [0.8, 9],
       "weekly": 1.5,
       "match": {
         "any": ["chicken thigh"],
@@ -311,10 +334,11 @@
       "category": "肉类",
       "emoji": "🥓",
       "unit": "lb",
+      "priceRange": [2, 20],
       "weekly": 0.75,
       "match": {
         "any": ["pork belly"],
-        "not": ["bacon", "cooked", "frozen", "cured", "smoked", "seasoned", "bun"]
+        "not": ["bacon", "cooked", "frozen", "cured", "smoked", "seasoned", "bun", "dried", "braised", "combo", "bowl", "jerky"]
       }
     },
     {
@@ -324,6 +348,7 @@
       "category": "肉类",
       "emoji": "🥩",
       "unit": "lb",
+      "priceRange": [1.5, 12],
       "weekly": 1,
       "match": {
         "any": ["ground pork", "pork, ground", "minced pork"],
@@ -337,6 +362,7 @@
       "category": "肉类",
       "emoji": "🥩",
       "unit": "lb",
+      "priceRange": [2, 14],
       "weekly": 1,
       "match": {
         "any": ["ground beef", "beef, ground", "ground chuck"],
@@ -350,6 +376,7 @@
       "category": "肉类",
       "emoji": "🥩",
       "unit": "lb",
+      "priceRange": [3, 25],
       "weekly": 0.5,
       "match": {
         "any": ["beef slice", "sliced beef", "beef hot pot", "hot pot beef", "beef for hot pot", "shabu beef", "beef shabu", "beef brisket slice"],
@@ -363,6 +390,7 @@
       "category": "海鲜",
       "emoji": "🐟",
       "unit": "lb",
+      "priceRange": [2.5, 30],
       "weekly": 1,
       "match": {
         "any": ["salmon fillet", "salmon filet", "atlantic salmon", "sockeye salmon", "coho salmon", "king salmon"],
@@ -376,6 +404,7 @@
       "category": "海鲜",
       "emoji": "🦐",
       "unit": "lb",
+      "priceRange": [3, 28],
       "weekly": 1,
       "match": {
         "any": ["raw shrimp", "shrimp, raw", "white shrimp", "black tiger shrimp", "head on shrimp", "shrimp peeled deveined"],
@@ -390,6 +419,7 @@
       "category": "主食",
       "emoji": "🍚",
       "unit": "lb",
+      "priceRange": [0.4, 4],
       "weekly": 2,
       "match": {
         "any": ["jasmine rice"],
@@ -403,6 +433,7 @@
       "category": "主食",
       "emoji": "🍜",
       "unit": "oz",
+      "priceRange": [0.04, 0.7],
       "weekly": 16,
       "match": {
         "any": ["wheat noodle", "dried noodle", "ramen noodle", "udon", "lo mein noodle", "hand pulled noodle"],
@@ -416,6 +447,7 @@
       "category": "主食",
       "emoji": "🍞",
       "unit": "each",
+      "priceRange": [1, 9],
       "weekly": 1,
       "match": {
         "any": ["sandwich bread", "white bread", "whole wheat bread", "sliced bread"],
@@ -430,6 +462,7 @@
       "category": "调料",
       "emoji": "🫗",
       "unit": "floz",
+      "priceRange": [0.05, 1.2],
       "density": 1.15,
       "weekly": 2,
       "match": {
@@ -444,11 +477,12 @@
       "category": "调料",
       "emoji": "🫗",
       "unit": "floz",
+      "priceRange": [0.15, 2.5],
       "density": 0.92,
       "weekly": 0.5,
       "match": {
         "any": ["sesame oil"],
-        "not": ["dressing", "seed", "paste", "tahini", "chili oil", "spray", "blend"]
+        "not": ["dressing", "seed", "paste", "tahini", "chili oil", "spray", "blend", "seaweed", "snack", "pk"]
       }
     },
     {
@@ -458,6 +492,7 @@
       "category": "调料",
       "emoji": "🫗",
       "unit": "floz",
+      "priceRange": [0.03, 1.0],
       "density": 0.92,
       "weekly": 4,
       "match": {
@@ -472,6 +507,7 @@
       "category": "饮品",
       "emoji": "☕",
       "unit": "oz",
+      "priceRange": [0.2, 2.5],
       "weekly": 8,
       "match": {
         "any": ["whole bean coffee", "coffee whole bean", "coffee beans"],

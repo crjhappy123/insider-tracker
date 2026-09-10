@@ -223,6 +223,40 @@ function unitPriceFor(p, pid, catalog, d) {
   return unitPrice({ price, priceUnit: p.priceUnit, size: p.size, title: p.title, targetUnit: item.unit, density: item.density });
 }
 
+/**
+ * 清掉某家店的样本数据（sku 以 SAMPLE- 开头的）。
+ *
+ * 真实数据到位后必须做这一步。样本只是脚手架，留着它会出两种问题：
+ *   1. 去重时按最低单价挑，编造的样本价往往比真实价低，会把真实价格挤掉
+ *   2. 比价表上同一家店混着真价和假价，「哪家最便宜」的结论没有意义
+ *
+ * 副作用是这家店的 90 天历史一起没了，促销判断会退回「历史不足」——
+ * 这是对的：我们确实还没有它的真实历史，不该拿编的历史装作有。
+ */
+export function purgeSample(storeId) {
+  const d = db();
+  const n = d.prepare("SELECT COUNT(*) c FROM products WHERE store_id = ? AND sku LIKE 'SAMPLE-%'").get(storeId).c;
+  if (n === 0) return 0;
+  // snapshots / matches 都有 ON DELETE CASCADE
+  d.prepare("DELETE FROM products WHERE store_id = ? AND sku LIKE 'SAMPLE-%'").run(storeId);
+  return n;
+}
+
+/** 清掉某家店当天没再抓到的旧商品（换了 sku 前缀、或商品下架） */
+export function pruneUnseen(storeId, day, { olderThanDays = 7 } = {}) {
+  const d = db();
+  const cutoff = daysAgo(olderThanDays);
+  const rows = d.prepare(`
+    SELECT p.id FROM products p
+    WHERE p.store_id = ?
+      AND (SELECT MAX(day) FROM snapshots WHERE product_id = p.id) < ?
+  `).all(storeId, cutoff);
+  if (rows.length === 0) return 0;
+  const del = d.prepare('DELETE FROM products WHERE id = ?');
+  for (const r of rows) del.run(r.id);
+  return rows.length;
+}
+
 export function logRun(storeId, ok, count, message) {
   db().prepare('INSERT INTO runs (ts, store_id, ok, product_count, message) VALUES (?,?,?,?,?)')
     .run(new Date().toISOString(), storeId, ok ? 1 : 0, count ?? 0, message ?? null);
@@ -262,12 +296,21 @@ export function getStores() {
   return db().prepare('SELECT * FROM stores ORDER BY drive_minutes').all();
 }
 
-/** 每个商品的最新快照（含匹配到的 item） */
-export function latestSnapshots({ itemId = null, storeId = null, day = null } = {}) {
+// 一个商品最后一次被抓到超过这么多天，就不再拿它的价格参与比价。
+//
+// 为什么需要：latestSnapshots 取的是「每个商品自己的最后一天」。没有这个窗口的话，
+// 某样东西下架了、或者关键词不再命中了，它最后那次的价格会永远留在页面上 ——
+// 几个月前的价格看起来和今天的一样新，还会参与「哪家最便宜」的判断。
+// 宁可这家店这样东西显示「没抓到」，也不要拿过期价格误导。
+const MAX_STALE_DAYS = 7;
+
+/** 每个商品的最新快照（含匹配到的 item）。超过 MAX_STALE_DAYS 没更新的商品会被排除。 */
+export function latestSnapshots({ itemId = null, storeId = null, day = null, maxStaleDays = MAX_STALE_DAYS } = {}) {
   const where = [];
   const args = [];
   if (itemId) { where.push('m.item_id = ?'); args.push(itemId); }
   if (storeId) { where.push('p.store_id = ?'); args.push(storeId); }
+  if (!day && maxStaleDays > 0) { where.push('s.day >= ?'); args.push(daysAgo(maxStaleDays)); }
   const clause = where.length ? `AND ${where.join(' AND ')}` : '';
 
   return db().prepare(`

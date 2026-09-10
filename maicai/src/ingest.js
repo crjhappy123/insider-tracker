@@ -13,6 +13,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   db, ROOT, syncStores, loadCatalog, saveProducts, logRun, getStores, today, daysAgo,
+  purgeSample, pruneUnseen,
 } from './db.js';
 import { scraperFor, sample, describeAll } from './scrapers/index.js';
 import { dumpHistory, loadHistory } from './history-store.js';
@@ -92,9 +93,20 @@ async function main() {
         log,
         dump: flags.has('dump'),
         day,
+        homeZip: cfg.home?.zip,
       });
       const withDay = products.map((p) => ({ ...p, day: p.day ?? day }));
       const saved = saveProducts(store.id, withDay, { items, day });
+
+      // 真实数据到位了就把这家店的样本脚手架清掉 —— 留着会让编造的价格
+      // 在去重时挤掉真实价格，比价结论就废了
+      if (source !== 'sample' && saved > 0) {
+        const purged = purgeSample(store.id);
+        if (purged) log(`  清掉 ${purged} 条样本数据（真实数据已到位，促销判断会重新攒历史）`);
+        const pruned = pruneUnseen(store.id, day);
+        if (pruned) log(`  清掉 ${pruned} 条超过 7 天没再抓到的旧商品`);
+      }
+
       logRun(store.id, true, saved, `source=${source}`);
       log(`  ✓ 存入 ${saved} 条 (${((Date.now() - t0) / 1000).toFixed(1)}s)\n`);
       totalOk++;

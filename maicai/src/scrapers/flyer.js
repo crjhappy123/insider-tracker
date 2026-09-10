@@ -252,6 +252,9 @@ export function flyerToProducts(extracted, storeId) {
 /**
  * data/manual/<storeId>.json:
  * {
+ *   // 价格是估的（没有实地核对过）就加这个标记。加了之后 sku 前缀变成 EST-，
+ *   // 网页上会标成「估算价」而不是「手动录入」 —— 别让没核对的数字看起来像确认过的。
+ *   "estimated": true,
  *   "products": [
  *     { "title": "Organic Strawberries", "size": "4 lb", "priceRegular": 12.99, "pricePromo": 9.99 },
  *     { "title": "Ribeye Steak", "priceUnit": "lb", "priceRegular": 13.99 }
@@ -268,6 +271,8 @@ export function loadManual(storeId, log = console.log) {
     log(`  [${storeId}] data/manual/${storeId}.json 不是合法 JSON: ${e.message}`);
     return [];
   }
+  const estimated = j.estimated === true;
+  const prefix = estimated ? 'EST' : 'MANUAL';
   const out = [];
   for (const [i, r] of (j.products ?? []).entries()) {
     const reg = Number(r.priceRegular ?? r.price);
@@ -277,7 +282,7 @@ export function loadManual(storeId, log = console.log) {
     }
     const promo = Number(r.pricePromo);
     out.push({
-      sku: r.sku || `MANUAL-${storeId}-${createHash('sha1').update(`${r.title}|${r.size ?? ''}`).digest('hex').slice(0, 12)}`,
+      sku: r.sku || `${prefix}-${storeId}-${createHash('sha1').update(`${r.title}|${r.size ?? ''}`).digest('hex').slice(0, 12)}`,
       title: r.title,
       brand: r.brand ?? null,
       size: r.size ?? null,
@@ -290,6 +295,6 @@ export function loadManual(storeId, log = console.log) {
       inStock: r.inStock !== false,
     });
   }
-  if (out.length) log(`  [${storeId}] 手动录入 ${out.length} 条`);
+  if (out.length) log(`  [${storeId}] ${estimated ? '估算价' : '手动录入'} ${out.length} 条`);
   return out;
 }

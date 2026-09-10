@@ -12,6 +12,14 @@ const REAL_DEAL_MIN = 0.08;   // 比历史中位便宜 8% 以上才算真降价
 const FAKE_DEAL_MAX = 0.03;   // 挂促销但便宜不到 3% -> 假促销
 const MIN_HISTORY = 5;        // 少于这么多天历史，不做判断，只标「数据不足」
 
+// 离群单价过滤。真实抓取会带回这种东西：搜 banana 搜到 "Nongshim Banana Kick"（$20/磅）、
+// "Glico Pocky Choco Banana"，搜 napa cabbage 搜到 "Napa Cabbage Seeds"（菜种子，$3664/磅）。
+// 关键词黑名单永远补不完，所以用 catalog 里声明的合理单价区间兜底。
+//
+// 一开始试过「同商品所有候选取中位数，偏离太多就踢」，但它是错的：垃圾商品数量能超过
+// 真商品，中位数本身就被污染了 —— 实测香蕉的「中位价」被 Pocky 之类抬到 $2.66/磅，
+// 结果 $0.57/磅的真香蕉反倒成了离群值被踢掉。显式区间不受污染影响，而且可控可查。
+
 function median(nums) {
   const a = nums.filter((n) => Number.isFinite(n) && n > 0).sort((x, y) => x - y);
   if (a.length === 0) return null;
@@ -26,8 +34,10 @@ function min(nums) {
 
 /**
  * 给每个「最新快照」附上历史基准和降价幅度。
+ * @param {object} [o]
+ * @param {boolean} [o.keepOutliers] true = 保留离群单价的行（排查用）
  */
-export function analyze({ day = null, windowDays = WINDOW_DAYS } = {}) {
+export function analyze({ day = null, windowDays = WINDOW_DAYS, keepOutliers = false } = {}) {
   const items = new Map(loadCatalog().map((i) => [i.id, i]));
   const stores = new Map(getStores().map((s) => [s.id, s]));
   const rows = latestSnapshots({ day });
@@ -96,7 +106,44 @@ export function analyze({ day = null, windowDays = WINDOW_DAYS } = {}) {
       weeklySaving,
     });
   }
-  return out;
+  const marked = markOutliers(preferTrustworthy(out));
+  return keepOutliers ? marked : marked.filter((r) => !r.outlier);
+}
+
+/**
+ * 同一家店同一样商品，只保留来源最可信的那一档。
+ * 例：99 Ranch 已经有真实抓取了，就不再让它的样本数据参与 —— 哪怕样本价更低。
+ */
+function preferTrustworthy(rows) {
+  const bestRank = new Map();
+  for (const r of rows) {
+    r.src = provenance(r.sku);
+    const k = `${r.itemId}|${r.storeId}`;
+    const rank = SRC_RANK[r.src] ?? 9;
+    if (!bestRank.has(k) || rank < bestRank.get(k)) bestRank.set(k, rank);
+  }
+  return rows.filter((r) => (SRC_RANK[r.src] ?? 9) === bestRank.get(`${r.itemId}|${r.storeId}`));
+}
+
+/** 用 catalog 里声明的合理单价区间，把明显不是同一样东西的标出来 */
+function markOutliers(rows) {
+  const ranges = new Map(loadCatalog().map((i) => [i.id, i.priceRange]));
+  for (const r of rows) {
+    r.outlier = false;
+    const range = ranges.get(r.itemId);
+    if (!Array.isArray(range) || !Number.isFinite(r.unitPrice)) continue;
+    const [lo, hi] = range;
+    if (r.unitPrice < lo || r.unitPrice > hi) {
+      r.outlier = true;
+      r.outlierRange = range;
+    }
+  }
+  return rows;
+}
+
+/** 被离群过滤踢掉的行，用来在界面/日志里说明「为什么这个商品没参与比价」 */
+export function outliers(opts = {}) {
+  return analyze({ ...opts, keepOutliers: true }).filter((r) => r.outlier);
 }
 
 /**
@@ -253,10 +300,16 @@ export function compareAll(opts = {}) {
  * 必须能标到页面上：把编造的样本价和真实抓到的价格并排比较，
  * 「最低」「降 43%」这些结论是无意义的 —— 公开站点不标出来就是误导。
  */
+// 数据可信度排序。同一家店同一样东西有多个来源时（比如刚接上真实抓取、
+// 但样本或旧的手动录入还在库里），必须挑可信的那个，**不能只挑价格低的** ——
+// 编造的样本价往往比真实价低，按价格挑会让假数据把真数据挤掉，比价结论就废了。
+const SRC_RANK = { real: 0, flyer: 1, manual: 2, estimate: 3, sample: 4 };
+
 export function provenance(sku) {
   const t = String(sku || '');
   if (t.startsWith('SAMPLE-')) return 'sample';
   if (t.startsWith('MANUAL-')) return 'manual';
+  if (t.startsWith('EST-')) return 'estimate';
   if (t.startsWith('FLYER-')) return 'flyer';
   return 'real';
 }

@@ -1,0 +1,48 @@
+{
+  "_说明": [
+    "改名成 trader_joes.json 就生效。",
+    "",
+    "Trader Joe's 全国统一定价而且常年不变，所以手动录一次能用很久 —— 这家反而是",
+    "最适合手动录入的。它基本不搞促销，在这个项目里的价值是当比价基准线：",
+    "有些东西 TJ 常年就是最便宜的，不用等打折。",
+    "",
+    "下面的价格是按 TJ 常见货架价填的参考值，**不是我实测抓到的**（官网被 Akamai 拒了）。",
+    "你下次去店里对着货架改一遍就准了，之后基本不用再动。",
+    "",
+    "size 一定要写清楚 —— 比价靠它换算单价。按磅散卖的写 priceUnit: \"lb\"。"
+  ],
+
+  "products": [
+    { "title": "Trader Joe's Whole Milk", "size": "1 gal", "priceRegular": 4.49 },
+    { "title": "Trader Joe's Large Eggs", "size": "12 ct", "priceRegular": 3.99 },
+    { "title": "Trader Joe's Plain Greek Yogurt", "size": "32 oz", "priceRegular": 5.49 },
+    { "title": "Trader Joe's Organic Firm Tofu", "size": "16 oz", "priceRegular": 2.49 },
+
+    { "title": "Bananas", "priceUnit": "lb", "priceRegular": 0.79 },
+    { "title": "Avocado", "size": "each", "priceRegular": 1.49 },
+    { "title": "Strawberries", "size": "1 lb", "priceRegular": 3.49 },
+    { "title": "Blueberries", "size": "6 oz", "priceRegular": 2.99 },
+
+    { "title": "Persian Cucumbers", "size": "6 ct", "priceRegular": 2.99 },
+    { "title": "Broccoli Florets", "size": "12 oz", "priceRegular": 2.49 },
+    { "title": "Russet Potatoes", "size": "5 lb", "priceRegular": 3.99 },
+    { "title": "Yellow Onions", "size": "3 lb", "priceRegular": 2.99 },
+    { "title": "Spinach", "size": "6 oz", "priceRegular": 2.29 },
+    { "title": "Shiitake Mushrooms", "size": "8 oz", "priceRegular": 3.49 },
+    { "title": "Vine Tomatoes", "size": "1 lb", "priceRegular": 2.99 },
+    { "title": "Garlic", "size": "3 ct", "priceRegular": 1.29 },
+
+    { "title": "Boneless Skinless Chicken Breast", "priceUnit": "lb", "priceRegular": 5.99 },
+    { "title": "Chicken Thighs Boneless Skinless", "priceUnit": "lb", "priceRegular": 4.49 },
+    { "title": "Ground Beef 85% Lean", "size": "1 lb", "priceRegular": 6.49 },
+    { "title": "Atlantic Salmon Fillet", "priceUnit": "lb", "priceRegular": 11.99 },
+    { "title": "Raw Shrimp Peeled Deveined", "size": "1 lb", "priceRegular": 10.99 },
+
+    { "title": "Trader Joe's Jasmine Rice", "size": "2 lb", "priceRegular": 3.49 },
+    { "title": "Trader Joe's Sandwich Bread", "size": "each", "priceRegular": 3.49 },
+    { "title": "Trader Joe's Soy Sauce", "size": "15 fl oz", "priceRegular": 2.99 },
+    { "title": "Trader Joe's Toasted Sesame Oil", "size": "8.45 fl oz", "priceRegular": 3.99 },
+    { "title": "Trader Joe's Canola Oil", "size": "32 fl oz", "priceRegular": 3.49 },
+    { "title": "Trader Joe's Whole Bean Coffee", "size": "14 oz", "priceRegular": 7.99 }
+  ]
+}

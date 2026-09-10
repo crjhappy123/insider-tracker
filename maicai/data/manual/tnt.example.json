@@ -1,0 +1,30 @@
+{
+  "_说明": [
+    "改名成 tnt.json 就生效。",
+    "",
+    "T&T (大统华) Bellevue 店的官网所有入口都被 Akamai 拒了（403，真实浏览器也一样），",
+    "所以只能手动录入或者放促销单截图。",
+    "",
+    "⚠️ 录入前先确认价格是**美元**。T&T 是加拿大连锁，网站默认可能落到加拿大门店，",
+    "那边标的是加元。拿加元价格和另外几家的美元价格比是错的。",
+    "",
+    "还有一点：T&T 在 Bellevue，从 Shoreline 单程 32 分钟。购物清单的分店建议会把",
+    "往返 64 分钟折算成约 $22 的成本，所以除非省得比这多，它不会推荐你专程跑一趟。",
+    "",
+    "下面是空模板，去店里对着货架填。size 一定写清楚，散称的写 priceUnit: \"lb\"。"
+  ],
+
+  "products": [
+    { "title": "Baby Bok Choy", "priceUnit": "lb", "priceRegular": 1.99 },
+    { "title": "Napa Cabbage", "priceUnit": "lb", "priceRegular": 1.29 },
+    { "title": "Green Onion", "size": "1 bunch", "priceRegular": 0.99 },
+    { "title": "Shiitake Mushroom", "priceUnit": "lb", "priceRegular": 6.99 },
+    { "title": "Firm Tofu", "size": "16 oz", "priceRegular": 1.99 },
+    { "title": "Pork Belly", "priceUnit": "lb", "priceRegular": 5.99 },
+    { "title": "Beef Hot Pot Sliced", "priceUnit": "lb", "priceRegular": 9.99 },
+    { "title": "Raw Shrimp", "priceUnit": "lb", "priceRegular": 9.99 },
+    { "title": "Jasmine Rice", "size": "25 lb", "priceRegular": 32.99 },
+    { "title": "Wheat Noodles", "size": "1.5 kg", "priceRegular": 7.99 },
+    { "title": "Light Soy Sauce", "size": "500 ml", "priceRegular": 4.49 }
+  ]
+}

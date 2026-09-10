@@ -61,20 +61,45 @@ function thumb(imageUrl, emoji, cls = '') {
   return `<div class="thumb ${cls}" data-emoji="${esc(emoji || EMOJI_FALLBACK)}">${inner}</div>`;
 }
 
-/** 数据里还有编造的样本价时，必须显著提示 —— 不然公开站点等于在骗人 */
+// 每种数据来源对应的说明。这个必须显著提示 —— 公开站点把编造的价格
+// 不声不响地混在真实价格里，等于在骗人。
+const SRC_LABEL = {
+  sample: '样本价',
+  estimate: '估算价',
+  manual: '手动录入',
+  flyer: '促销单读图',
+  real: '实测抓取',
+};
+
 function sampleNotice() {
   const s = state.summary;
-  if (!s?.hasSampleData) return '';
-  const stores = Object.entries(s.dataSources || {})
-    .filter(([, v]) => v.sample)
-    .map(([id]) => storeName(id));
+  if (!s?.dataSources) return '';
+  const tally = {};
+  for (const v of Object.values(s.dataSources)) {
+    for (const [k, n] of Object.entries(v)) tally[k] = (tally[k] || 0) + n;
+  }
+  const soft = (tally.sample || 0) + (tally.estimate || 0);
+  if (soft === 0) return '';
+
+  const storesOf = (kind) => Object.entries(s.dataSources)
+    .filter(([, v]) => v[kind]).map(([id]) => storeName(id));
+
+  const lines = [];
+  if (tally.sample) {
+    lines.push(`<strong>${tally.sample} 条是样本数据</strong>（按各店定价习惯编的，用来验证功能）：${storesOf('sample').map(esc).join('、')}`);
+  }
+  if (tally.estimate) {
+    lines.push(`<strong>${tally.estimate} 条是估算价</strong>（按常见货架价填的，没有实地核对）：${storesOf('estimate').map(esc).join('、')}`);
+  }
+  const trusted = (tally.real || 0) + (tally.manual || 0) + (tally.flyer || 0);
+
   return `<div class="notice">
     <span class="ico">⚠️</span>
     <div>
-      <strong>这些价格里有 ${s.sampleCount} 条是样本数据，不是真实价格。</strong>
-      样本是按各店真实定价习惯编的，用来验证功能，<strong>别拿来做真的购买决定</strong>。
-      涉及门店：${stores.map((n) => esc(n)).join('、')}。
-      <br>真实数据要配好各店凭证后跑抓取才会替换掉它们，来源在每个价格旁边标着。
+      <strong>这些价格里有 ${soft} 条不是实测价格，别拿来做真的购买决定。</strong>
+      <br>${lines.join('<br>')}
+      ${trusted ? `<br>另有 ${trusted} 条是实测抓取或你手动核对过的。` : ''}
+      <br>每张卡片上都标着来源。抓取跑通后不可信的会被自动替换掉。
     </div>
   </div>`;
 }
@@ -344,7 +369,9 @@ function dealTile(r, isCheapest) {
   if (Number.isFinite(r.packQty) && r.packQty > (r.weekly || 0) * 2) {
     badges.push(`<span class="badge warn"><span class="dot"></span>整包 ${+r.packQty.toFixed(1)} ${esc(unitZh(r.unit))}</span>`);
   }
-  if (r.src === 'sample') badges.push(`<span class="badge warn"><span class="dot"></span>样本价</span>`);
+  if (r.src === 'sample' || r.src === 'estimate') {
+    badges.push(`<span class="badge warn"><span class="dot"></span>${SRC_LABEL[r.src]}</span>`);
+  }
 
   const eff = r.pricePromo ?? r.priceRegular;
   return `
