@@ -9,13 +9,3 @@ data.sql
 cn_*.sql
 dump.sql
 .wrangler/
-
-# 买菜比价（maicai/）：本地产物不入库
-maicai/node_modules/
-maicai/dist/
-maicai/data/maicai.db*
-maicai/data/debug/
-maicai/data/flyers/*/*.jpg
-maicai/data/flyers/*/*.png
-maicai/data/flyers/*/.cache/
-maicai/.env

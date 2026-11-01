@@ -210,6 +210,9 @@ tables too, so re-running it on an existing database just adds the A-share side.
 npx wrangler pages deploy public   # first run creates the Pages project
 ```
 
+After that, `.github/workflows/deploy.yml` publishes automatically on every push
+to `main` that touches `public/`, `functions/` or `wrangler.toml`.
+
 Then in the Cloudflare dashboard → your Pages project → **Custom domains**, add
 your domain (DNS is auto-configured since Cloudflare manages it). Also bind the
 D1 database to the Pages project (Settings → Functions → D1 bindings: `DB` →
