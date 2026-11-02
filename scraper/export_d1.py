@@ -47,6 +47,11 @@ CN_COMPANY_COLUMNS = [
     "updated_at",
 ]
 CN_SCORE_COLUMNS = ["change_id", "score", "rating", "comment", "created_at"]
+YT_VIDEO_COLUMNS = [
+    "video_id", "channel_id", "channel_name", "title", "published_at",
+    "publish_date", "stance", "summary", "views", "stocks", "model", "attempts",
+    "created_at",
+]
 
 # table -> (columns, insert verb)
 TABLES = {
@@ -60,6 +65,7 @@ TABLES = {
     "cn_daily_reports": (REPORT_COLUMNS, "INSERT OR REPLACE"),
     "cn_ai_scores": (CN_SCORE_COLUMNS, "INSERT OR REPLACE"),
     "cn_leaderboard": (LEADERBOARD_COLUMNS, "INSERT OR REPLACE"),
+    "yt_videos": (YT_VIDEO_COLUMNS, "INSERT OR REPLACE"),
 }
 # Tables whose rows are date-windowed by `--since`: filter column -> ORDER BY.
 SINCE_COLUMN = {

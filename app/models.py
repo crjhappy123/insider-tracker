@@ -212,6 +212,26 @@ class CnAiScore(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class YtVideo(Base):
+    """A finance YouTuber's video plus the AI-extracted view (/yt page)."""
+
+    __tablename__ = "yt_videos"
+
+    video_id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    channel_id: Mapped[str] = mapped_column(String(32), index=True)
+    channel_name: Mapped[str] = mapped_column(String(255))
+    title: Mapped[str] = mapped_column(String)
+    published_at: Mapped[str] = mapped_column(String(32), index=True)
+    publish_date: Mapped[str] = mapped_column(String(10), index=True)
+    stance: Mapped[Optional[str]] = mapped_column(String(8), index=True, nullable=True)
+    summary: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    views: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    stocks: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # JSON array
+    model: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class CnLeaderboard(Base):
     """Durable A-share AI leaderboard; `ticker` holds the 6-digit 股票代码.
 

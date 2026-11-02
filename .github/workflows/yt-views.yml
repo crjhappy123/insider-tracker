@@ -1,0 +1,54 @@
+name: YouTuber views → D1
+
+on:
+  schedule:
+    # Twice daily (UTC) so a video is rarely more than half a day behind.
+    #   13:00 UTC — US morning, picks up overnight uploads before the open.
+    #   01:00 UTC — after US close, picks up the day's market recaps.
+    - cron: "0 13 * * *"
+    - cron: "0 1 * * *"
+  workflow_dispatch: # allow manual runs
+
+concurrency:
+  group: yt-views
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Ensure D1 schema
+        run: npx --yes wrangler@3 d1 execute insider --remote --file=schema.sql
+
+      # Start from D1 so videos already analyzed aren't paid for twice.
+      - name: Pull current videos from D1
+        run: |
+          npx --yes wrangler@3 d1 export insider --remote --no-schema --table=yt_videos --output=dump.sql
+          python -m scraper.load_dump schema.sql dump.sql
+
+      - name: Fetch and analyze new videos
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: python -m scraper.yt_ingest
+
+      - name: Push videos to D1
+        run: |
+          python -m scraper.export_d1 --table yt_videos > yt_videos.sql
+          [ -s yt_videos.sql ] && npx --yes wrangler@3 d1 execute insider --remote --file=yt_videos.sql || echo "no videos to push"
+
+      - name: Prune videos older than 30 days
+        run: npx --yes wrangler@3 d1 execute insider --remote --command "DELETE FROM yt_videos WHERE publish_date < date('now', '-30 days')"

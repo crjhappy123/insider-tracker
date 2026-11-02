@@ -146,6 +146,29 @@ run, and anything over the cap is picked up by the next run.
 workflows and reuse the **same repo secrets** — no new ones are needed. They run
 on 北京时间 (09:30 UTC after the 15:00 close, 01:00 UTC before the open).
 
+## YouTuber views (`/yt`)
+
+Tracks what finance YouTubers said in their latest videos. Channels live in
+`scraper/yt_channels.json` (name + `UC…` channel id); edit that file to add or
+remove one.
+
+```bash
+GEMINI_API_KEY=… python -m scraper.yt_ingest
+```
+
+Gemini reads each public video URL directly and returns the creator's market stance,
+a summary, key points and stock calls (with any price levels they named). The page
+rolls those calls up into daily and weekly 看多 / 看空 / 分歧 boards, ranked by how
+many creators made the call. `.github/workflows/yt-views.yml` runs twice a day and
+keeps 30 days of videos in D1.
+
+- `GEMINI_API_KEY` — required, or nothing gets analyzed and the page stays empty.
+  The free tier allows 8 hours of YouTube video a day, so each run analyzes at most
+  `YT_MAX_VIDEOS` (default 8), newest first; the rest wait for the next run.
+- `YOUTUBE_API_KEY` — optional but recommended (YouTube Data API v3, free quota).
+  Without it, listing uses the RSS feed, which often returns 404/500 for live
+  channels, especially from CI.
+
 ## Run the web app
 
 ```bash

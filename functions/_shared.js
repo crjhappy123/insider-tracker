@@ -307,12 +307,12 @@ tbody tr.mc-mid   .mcap{color:var(--mc-mid)}
 .disclaimer p:last-child{margin:0}
 `;
 
-// Header market switcher. `current` is "us" or "cn"; the active tab is inert.
+// Header market switcher. `current` is "us", "cn" or "yt"; the active tab is inert.
 export function marketSwitch(current) {
   const tab = (href, label, key) =>
     `<a class="mkt-tab${current === key ? " on" : ""}" href="${href}">${label}</a>`;
   return `<nav class="mkt" aria-label="Market">
-    ${tab("/", "🇺🇸 US", "us")}${tab("/cn", "🇨🇳 A股", "cn")}
+    ${tab("/", "🇺🇸 US", "us")}${tab("/cn", "🇨🇳 A股", "cn")}${tab("/yt", "📺 博主", "yt")}
   </nav>`;
 }
 

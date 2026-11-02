@@ -168,3 +168,26 @@ CREATE TABLE IF NOT EXISTS cn_leaderboard (
 );
 CREATE INDEX IF NOT EXISTS ix_cnlb_last_seen ON cn_leaderboard(last_seen_date);
 CREATE INDEX IF NOT EXISTS ix_cnlb_score     ON cn_leaderboard(best_score);
+
+-- ---------------------------------------------------------------------------
+-- Finance YouTubers' views, served at /yt. One row per video; `stance` stays NULL
+-- until Gemini has analyzed it, and the page only shows analyzed videos.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS yt_videos (
+  video_id     TEXT PRIMARY KEY,
+  channel_id   TEXT NOT NULL,
+  channel_name TEXT NOT NULL,
+  title        TEXT NOT NULL,
+  published_at TEXT NOT NULL,            -- ISO timestamp
+  publish_date TEXT NOT NULL,            -- ISO date, as published (UTC)
+  stance       TEXT,                     -- 看多 / 看空 / 中性 on the overall market
+  summary      TEXT,                     -- one-line core view
+  views        TEXT,                     -- bulleted key points
+  stocks       TEXT,                     -- JSON: [{ticker, name, category, stance, price_note, reason}]
+  model        TEXT,
+  attempts     INTEGER NOT NULL DEFAULT 0, -- failed analysis attempts
+  created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_yt_published ON yt_videos(published_at);
+CREATE INDEX IF NOT EXISTS ix_yt_channel   ON yt_videos(channel_id);
+CREATE INDEX IF NOT EXISTS ix_yt_stance    ON yt_videos(stance);

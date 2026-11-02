@@ -11,7 +11,9 @@ import sys
 from app.db import DB_PATH
 
 # Reported after loading, so a workflow log shows what actually came down.
-_SUMMARY_TABLES = ("transactions", "leaderboard", "cn_transactions", "cn_leaderboard")
+_SUMMARY_TABLES = (
+    "transactions", "leaderboard", "cn_transactions", "cn_leaderboard", "yt_videos",
+)
 
 
 def main(argv):
