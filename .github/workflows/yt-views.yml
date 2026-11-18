@@ -45,7 +45,10 @@ jobs:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: python -m scraper.yt_ingest
 
+      # Runs even if the step above failed: it can fail after analyzing some videos,
+      # and those results shouldn't be paid for twice.
       - name: Push videos to D1
+        if: ${{ !cancelled() }}
         run: |
           python -m scraper.export_d1 --table yt_videos > yt_videos.sql
           [ -s yt_videos.sql ] && npx --yes wrangler@3 d1 execute insider --remote --file=yt_videos.sql || echo "no videos to push"

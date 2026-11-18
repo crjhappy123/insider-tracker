@@ -165,9 +165,10 @@ keeps 30 days of videos in D1.
 - `GEMINI_API_KEY` — required, or nothing gets analyzed and the page stays empty.
   The free tier allows 8 hours of YouTube video a day, so each run analyzes at most
   `YT_MAX_VIDEOS` (default 8), newest first; the rest wait for the next run.
-- `YOUTUBE_API_KEY` — optional but recommended (YouTube Data API v3, free quota).
-  Without it, listing uses the RSS feed, which often returns 404/500 for live
-  channels, especially from CI.
+- `YOUTUBE_API_KEY` — required in CI (YouTube Data API v3, free quota). Without it,
+  listing falls back to the RSS feed, which returned 404/500 for every channel from
+  GitHub Actions; the run then fails. RSS is only usable locally, and even there
+  often fails.
 
 ## Run the web app
 

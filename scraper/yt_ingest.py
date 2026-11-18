@@ -172,21 +172,26 @@ def _fetch_api(channel: dict) -> list[dict]:
     return []
 
 
-def fetch_recent(channels: list[dict], today: date | None = None) -> list[dict]:
-    """Videos from the lookback window. One failing channel doesn't stop the rest."""
+def fetch_recent(channels: list[dict], today: date | None = None) -> tuple[list[dict], int]:
+    """Videos from the lookback window, plus how many channels couldn't be listed.
+
+    One failing channel doesn't stop the rest.
+    """
     cutoff = ((today or date.today()) - timedelta(days=LOOKBACK_DAYS)).isoformat()
     fetch = _fetch_api if YOUTUBE_API_KEY else _fetch_rss
     videos = []
+    failed = 0
     for channel in channels:
         try:
             found = fetch(channel)
         except requests.RequestException as e:
             print(f"{channel['name']}: listing failed ({e}).")
+            failed += 1
             continue
         recent = [v for v in found if v["publish_date"] >= cutoff]
         print(f"{channel['name']}: {len(recent)} recent video(s).")
         videos.extend(recent)
-    return videos
+    return videos, failed
 
 
 def store_videos(videos: list[dict]) -> None:
@@ -316,8 +321,16 @@ def analyze_pending() -> int:
 
 def main(argv: list[str]) -> None:
     init_db()
-    store_videos(fetch_recent(load_channels()))
-    analyze_pending()
+    channels = load_channels()
+    videos, failed = fetch_recent(channels)
+    store_videos(videos)
+    queued = len(pending_videos())
+    done = analyze_pending()
+    # Single failures are routine, but a run that achieved nothing must not look green.
+    if failed == len(channels):
+        sys.exit("Every channel failed to list.")
+    if queued and not done:
+        sys.exit(f"None of the {queued} queued video(s) could be analyzed.")
 
 
 if __name__ == "__main__":

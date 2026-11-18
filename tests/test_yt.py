@@ -63,8 +63,68 @@ def test_fetch_recent_survives_a_failing_channel_and_drops_old_videos(monkeypatc
     monkeypatch.setattr(yt_ingest, "YOUTUBE_API_KEY", None)
     channels = [{"name": "bad", "channel_id": "UCbad"}, CHANNEL]
 
-    assert len(yt_ingest.fetch_recent(channels, today=date(2026, 11, 1))) == 1
-    assert yt_ingest.fetch_recent(channels, today=date(2026, 12, 1)) == []
+    videos, failed = yt_ingest.fetch_recent(channels, today=date(2026, 11, 1))
+    assert len(videos) == 1
+    assert failed == 1
+    assert yt_ingest.fetch_recent(channels, today=date(2026, 12, 1)) == ([], 1)
+
+
+class _FakeResponse:
+    def __init__(self, status_code, payload=None):
+        self.status_code = status_code
+        self._payload = payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(str(self.status_code))
+
+    def json(self):
+        return self._payload
+
+
+def test_fetch_api_falls_back_to_full_uploads_playlist(monkeypatch):
+    playlists = []
+    item = {
+        "snippet": {
+            "resourceId": {"videoId": "apivideo001"},
+            "title": "API video",
+            "publishedAt": "2026-10-31T19:30:12Z",
+        }
+    }
+
+    def fake_get(url, params, timeout):
+        playlists.append(params["playlistId"])
+        if params["playlistId"].startswith("UULF"):
+            return _FakeResponse(404)
+        return _FakeResponse(200, {"items": [item]})
+
+    monkeypatch.setattr(yt_ingest.requests, "get", fake_get)
+    videos = yt_ingest._fetch_api(CHANNEL)
+    assert playlists == ["UULFabc", "UUabc"]
+    assert videos[0]["video_id"] == "apivideo001"
+    assert videos[0]["publish_date"] == "2026-10-31"
+
+
+def test_main_fails_when_every_channel_fails(empty_videos, monkeypatch):
+    monkeypatch.setattr(yt_ingest, "load_channels", lambda: [CHANNEL])
+    monkeypatch.setattr(yt_ingest, "fetch_recent", lambda channels: ([], 1))
+    with pytest.raises(SystemExit):
+        yt_ingest.main([])
+
+
+def test_main_passes_on_a_quiet_day(empty_videos, monkeypatch):
+    monkeypatch.setattr(yt_ingest, "load_channels", lambda: [CHANNEL])
+    monkeypatch.setattr(yt_ingest, "fetch_recent", lambda channels: ([], 0))
+    yt_ingest.main([])
+
+
+def test_main_fails_when_nothing_could_be_analyzed(empty_videos, monkeypatch):
+    videos = yt_ingest.parse_feed(FEED, CHANNEL)
+    monkeypatch.setattr(yt_ingest, "load_channels", lambda: [CHANNEL])
+    monkeypatch.setattr(yt_ingest, "fetch_recent", lambda channels: (videos, 0))
+    monkeypatch.setattr(yt_ingest, "GEMINI_API_KEY", None)
+    with pytest.raises(SystemExit):
+        yt_ingest.main([])
 
 
 def test_clean_result_coerces_bad_stances_and_drops_nameless_stocks():
