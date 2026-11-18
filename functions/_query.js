@@ -177,13 +177,13 @@ export async function latestReport(db) {
 }
 
 // Market cap, always in billions: $45.31B, $0.22B.
-function bcap(v) {
+export function bcap(v) {
   if (v === null || v === undefined) return "—";
   return `$${(Number(v) / 1e9).toFixed(2)}B`;
 }
 
 // Compact currency: $9.9M, $270K, $540.
-function money(v) {
+export function money(v) {
   if (v === null || v === undefined) return "—";
   const n = Number(v);
   const abs = Math.abs(n);

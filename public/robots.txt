@@ -1,2 +1,4 @@
+# Every crawler and AI assistant is welcome. For agents and scheduled tasks, the
+# whole site in one Markdown page: /digest (overview of all pages: /llms.txt).
 User-agent: *
 Allow: /

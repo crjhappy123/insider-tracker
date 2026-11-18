@@ -15,6 +15,14 @@ the app shell, theme/CSS and the leaderboard windowing are shared
 other page shows. The top bar's clock shows the page's market (美东 or 北京) and
 whether it is open; exchange holidays aren't known to it.
 
+## For AI agents and scheduled tasks
+
+`/digest` returns the whole site as one Markdown document (`functions/_digest.js`):
+the day's 博主 macro report and stock calls, the 7-day blogger consensus, and the top
+25 US and A-share insider buys with AI comments — same data and filters as the pages.
+`/llms.txt` lists every page and endpoint, and `robots.txt` allows all crawlers.
+Point a scheduled task at `https://www.rudystock.com/digest`.
+
 ## Stack
 
 - **Scraper** (`scraper/`) — for the US, pulls the SEC EDGAR daily master index,

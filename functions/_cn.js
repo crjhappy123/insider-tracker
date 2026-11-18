@@ -178,7 +178,7 @@ export async function latestReport(db) {
 }
 
 // 市值: ¥1.53万亿 / ¥56.70亿. Always 亿元 or above, matching A-share convention.
-function bcap(v) {
+export function bcap(v) {
   if (v === null || v === undefined) return "—";
   const n = Number(v);
   if (Math.abs(n) >= 1e12) return `¥${(n / 1e12).toFixed(2)}万亿`;
@@ -186,7 +186,7 @@ function bcap(v) {
 }
 
 // 金额: ¥7.71亿 / ¥1234.5万 / ¥7,710.
-function money(v) {
+export function money(v) {
   if (v === null || v === undefined) return "—";
   const n = Number(v);
   const abs = Math.abs(n);

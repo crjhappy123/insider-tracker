@@ -1,0 +1,22 @@
+# RudyStock
+
+> 美股 / A股内部人买入追踪，加上财经 YouTube 博主的个股观点与每日 AI 宏观报告。所有页面都是服务端渲染的 HTML，数据每天更新两次，欢迎 AI 助手和定时任务读取。
+
+## 给 AI 和定时任务
+
+- [数据摘要 /digest](https://www.rudystock.com/digest): 一次拿到全部板块的最新数据（Markdown）——博主宏观报告、当日个股观点、近 7 日博主共识、美股与 A股内部人买入前 25 名及 AI 点评。定时任务读这一页就够了。
+
+## 页面
+
+- [美股 Insider](https://www.rudystock.com/): SEC Form 4 内部人公开市场买入，按公司汇总近 7 天，带 AI 评分与日报。
+- [A股 Insider](https://www.rudystock.com/cn): 董监高二级市场增持（东方财富），按公司汇总近 7 天。
+- [博主 · 个股观点](https://www.rudystock.com/yt): 每位博主当天点评的个股、建议（看多/看空/中性）和 0-100 Score；加 `?date=YYYY-MM-DD` 看指定日期。
+- [博主 · 宏观报告](https://www.rudystock.com/yt/macro): 当天所有博主观点汇总成的宏观报告；同样支持 `?date=`。
+- [博主 · 热力图](https://www.rudystock.com/yt/heatmap?range=w): 近 7 日博主点名个股的多空分布与推荐榜。
+
+## JSON
+
+- [/api/transactions](https://www.rudystock.com/api/transactions): 美股逐笔内部人买入（参数 ticker、insider、min_value、min_market_cap、limit）。
+- [/api/cn/transactions](https://www.rudystock.com/api/cn/transactions): A股逐笔董监高增持（同上）。
+
+内容由公开披露数据和 AI 整理生成，不构成投资建议。
