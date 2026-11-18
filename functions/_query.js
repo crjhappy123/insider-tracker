@@ -3,17 +3,14 @@
 // the US SQL, USD formatting, and English copy.
 // Files prefixed with "_" are not routed by Cloudflare Pages.
 import {
-  PAGE_CSS,
-  PAGE_SCRIPT,
-  THEME_BOOT,
   aiCell,
   aiPill,
   esc,
   loadBoards,
-  marketSwitch,
   mcapTier,
   num,
   renderBoards,
+  renderShell,
   tile,
 } from "./_shared.js";
 
@@ -254,7 +251,7 @@ export function renderPage(rows, f, report, boards) {
             <td class="n" data-v="${r.buy_count ?? 0}">${num(r.buy_count)}</td>
             <td data-v="${r.ai_score ?? -1}">${aiCell(r)}</td>
             <td class="n" data-v="${r.avg_price ?? -1}">${r.avg_price != null ? "$" + Number(r.avg_price).toFixed(2) : ""}</td>
-            <td class="n" data-v="${r.shares ?? -1}">${num(r.shares)}</td>
+            <td class="n qty" data-v="${r.shares ?? -1}">${num(r.shares)}</td>
             <td class="n val" data-v="${r.value ?? -1}">${r.value != null ? money(r.value) : ""}</td>
           </tr>${detail}`;
         })
@@ -288,18 +285,11 @@ export function renderPage(rows, f, report, boards) {
       </section>`
     : "";
 
-  return `<!DOCTYPE html>
-<html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Insider Tracker · SEC Form 4</title>
-${THEME_BOOT}
-<style>${PAGE_CSS}</style></head><body><div class="wrap">
-<header>
-  <div class="logo"><span class="dot"></span>Insider Tracker</div>
+  const body = `
+<div class="page-head">
+  <h1>美股 Insider</h1>
   <span class="tag">SEC Form 4 · insider open-market purchases</span>
-  ${marketSwitch("us")}
-  <button class="theme-btn" id="themeBtn" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">🌗</button>
-</header>
+</div>
 
 ${reportCard}
 
@@ -313,7 +303,7 @@ ${renderBoards(boards, FMT, LABELS)}
 </section>
 
 
-<form class="card" method="get" action="/">
+<form class="card filters" method="get" action="/">
   <label>Ticker<input name="ticker" value="${esc(f.ticker || "")}" placeholder="AAPL" size="8"></label>
   <label>Insider<input name="insider" value="${esc(f.insider || "")}" placeholder="name" size="14"></label>
   <label>Min $ value<input name="min_value" value="${f.minValue ?? ""}" placeholder="100000" size="10"></label>
@@ -336,7 +326,7 @@ ${renderBoards(boards, FMT, LABELS)}
 <div class="card tablecard"><table><thead><tr>
 <th data-type="text">Latest Filed</th><th data-type="num">Ticker / Mkt Cap</th><th data-type="text">Company</th>
 <th class="n" data-type="num">Insiders</th><th class="n" data-type="num">Buys</th><th data-type="num">AI</th>
-<th class="n" data-type="num">Avg Price</th><th class="n" data-type="num">Total Qty</th><th class="n" data-type="num">Total Value</th>
+<th class="n" data-type="num">Avg Price</th><th class="n qty" data-type="num">Total Qty</th><th class="n" data-type="num">Total Value</th>
 </tr></thead><tbody>${bodyRows}</tbody></table></div>
 
 <footer class="card disclaimer">
@@ -344,7 +334,6 @@ ${renderBoards(boards, FMT, LABELS)}
   <p>Data is sourced from public <strong>Form 4</strong> filings on the U.S. SEC EDGAR system and is provided for informational purposes only. Form 4 filings are lawful, publicly required disclosures of insider transactions — not confidential or illegal insider information.</p>
   <p>Nothing on this site — including AI-generated scores, ratings, or commentary — constitutes investment advice, a recommendation, or an offer to buy or sell any security, and does not represent the views of this site. Market caps and other figures are estimates and may be delayed or inaccurate; we make no warranty as to their accuracy, completeness, or timeliness.</p>
   <p>Investing involves risk. Do your own research and make your own decisions. This site is not affiliated with the SEC or any brokerage, and is not liable for any losses arising from use of the information provided here.</p>
-</footer>
-${PAGE_SCRIPT}
-</div></body></html>`;
+</footer>`;
+  return renderShell({ active: "us", title: "美股 Insider", lang: "en", market: "us", body });
 }

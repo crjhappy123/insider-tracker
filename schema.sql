@@ -191,3 +191,15 @@ CREATE TABLE IF NOT EXISTS yt_videos (
 CREATE INDEX IF NOT EXISTS ix_yt_published ON yt_videos(published_at);
 CREATE INDEX IF NOT EXISTS ix_yt_channel   ON yt_videos(channel_id);
 CREATE INDEX IF NOT EXISTS ix_yt_stance    ON yt_videos(stance);
+
+-- One AI macro report per day, condensed from that day's analyzed yt_videos
+-- (scraper/yt_macro.py). Kept past the 30-day video prune: rows are tiny.
+CREATE TABLE IF NOT EXISTS yt_macro_reports (
+  report_date TEXT PRIMARY KEY,           -- ISO date (= yt_videos.publish_date)
+  stance      TEXT,                       -- 看多 / 看空 / 中性: the creators' overall call
+  headline    TEXT,
+  content     TEXT,                       -- JSON: {market, macro, sectors, consensus, divergence, risks, watch}
+  video_count INTEGER NOT NULL DEFAULT 0, -- analyzed videos the report was built from
+  model       TEXT,
+  created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);

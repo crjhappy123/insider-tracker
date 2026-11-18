@@ -1,17 +1,19 @@
-# Insider Tracker
+# RudyStock (Insider Tracker)
 
-An OpenInsider-style web app that tracks insider buying in **two markets**, each
-on its own page with a switcher in the header:
+A web app with **three sections**, switched from a sidebar (a tab strip on phones):
 
-| Page  | Market       | Source                                                     |
-| ----- | ------------ | ---------------------------------------------------------- |
-| `/`   | U.S. stocks  | SEC EDGAR **Form 4** open-market purchases (code P)        |
-| `/cn` | 中国 A 股    | 东方财富 **董监高持股变动** — 二级市场增持 (Chinese UI)      |
+| Section     | Pages                                   | Source                                                |
+| ----------- | --------------------------------------- | ----------------------------------------------------- |
+| 美股 Insider | `/`                                     | SEC EDGAR **Form 4** open-market purchases (code P)   |
+| A股 Insider  | `/cn`                                   | 东方财富 **董监高持股变动** — 二级市场增持 (Chinese UI) |
+| 博主汇总     | `/yt` 个股观点, `/yt/macro` 宏观报告, `/yt/heatmap` 热力图 | Finance YouTubers' videos, read by Gemini |
 
-The two sides are deliberately independent: separate D1 tables (`cn_*`), separate
-scrapers, separate workflows, separate currency formatting and copy. Only the
-theme/CSS and the leaderboard windowing are shared (`functions/_shared.js`), so
-neither market's data or ingest can change what the other page shows.
+The two insider sides are deliberately independent: separate D1 tables (`cn_*`),
+separate scrapers, separate workflows, separate currency formatting and copy. Only
+the app shell, theme/CSS and the leaderboard windowing are shared
+(`functions/_shared.js`), so neither market's data or ingest can change what the
+other page shows. The top bar's clock shows the page's market (美东 or 北京) and
+whether it is open; exchange holidays aren't known to it.
 
 ## Stack
 
@@ -146,23 +148,37 @@ run, and anything over the cap is picked up by the next run.
 workflows and reuse the **same repo secrets** — no new ones are needed. They run
 on 北京时间 (09:30 UTC after the 15:00 close, 01:00 UTC before the open).
 
-## YouTuber views (`/yt`)
+## 博主汇总 (`/yt`)
 
 Tracks what finance YouTubers said in their latest videos. Channels live in
 `scraper/yt_channels.json` (name + `UC…` channel id); edit that file to add or
 remove one.
 
 ```bash
-GEMINI_API_KEY=… python -m scraper.yt_ingest
+GEMINI_API_KEY=… python -m scraper.yt_ingest   # list, store and analyze new videos
+GEMINI_API_KEY=… python -m scraper.yt_macro    # (re)build recent days' macro reports
 ```
 
 Gemini reads each public video URL directly and returns the creator's market stance,
-a summary, key points and stock calls (with any price levels they named). The page
-rolls those calls up into daily and weekly 看多 / 看空 / 分歧 boards, ranked by how
-many creators made the call. `.github/workflows/yt-views.yml` runs twice a day and
-keeps 30 days of videos in D1.
+a summary, key points and stock calls, each with any price levels they named and a
+0-100 **Score** for how bullish the creator is on it (calls analyzed before Score
+existed show "—"). The three pages, each with a ◀ date ▶ picker:
 
-- `GEMINI_API_KEY` — required, or nothing gets analyzed and the page stays empty.
+- **个股观点** `/yt` — one row per creator and stock for the day: 股票, 博主,
+  博主分析总结, 建议, Score; filter by creator or stock. The day's videos follow.
+- **宏观报告** `/yt/macro` — `scraper/yt_macro.py` sends the day's analyzed views
+  (text only, so it's one cheap call) to Gemini and stores one report per day in
+  `yt_macro_reports`: overall call, headline, 大盘, 宏观与政策, sectors, 共识, 分歧,
+  风险, what to watch. A day is rebuilt whenever more of its videos have been analyzed
+  since. Days without a report yet still show every creator's stance and summary.
+- **热力图** `/yt/heatmap` — a treemap of the stocks called on the day or the 7 days
+  ending on it (area = creators who took a side, color = which side), above the
+  看多 / 看空 / 分歧 board ranked by how many creators made the call.
+
+Days are the video's UTC `publish_date`. `.github/workflows/yt-views.yml` runs twice
+a day: ingest, then macro reports; it keeps 30 days of videos in D1 (reports are kept).
+
+- `GEMINI_API_KEY` — required, or nothing gets analyzed and the pages stay empty.
   The free tier allows 8 hours of YouTube video a day, so each run analyzes at most
   `YT_MAX_VIDEOS` (default 8), newest first; the rest wait for the next run.
 - `YOUTUBE_API_KEY` — required in CI (YouTube Data API v3, free quota). Without it,

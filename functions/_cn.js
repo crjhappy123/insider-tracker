@@ -6,17 +6,14 @@
 // the market-agnostic leaderboard machinery are shared, via _shared.js.
 // Files prefixed with "_" are not routed by Cloudflare Pages.
 import {
-  PAGE_CSS,
-  PAGE_SCRIPT,
-  THEME_BOOT,
   aiCell,
   aiPill,
   esc,
   loadBoards,
-  marketSwitch,
   mcapTier,
   num,
   renderBoards,
+  renderShell,
   tile,
 } from "./_shared.js";
 
@@ -257,7 +254,7 @@ export function renderPage(rows, f, report, boards) {
             <td class="n" data-v="${r.buy_count ?? 0}">${num(r.buy_count)}</td>
             <td data-v="${r.ai_score ?? -1}">${aiCell(r)}</td>
             <td class="n" data-v="${r.avg_price ?? -1}">${r.avg_price != null ? "¥" + Number(r.avg_price).toFixed(2) : ""}</td>
-            <td class="n" data-v="${r.shares ?? -1}">${num(r.shares)}</td>
+            <td class="n qty" data-v="${r.shares ?? -1}">${num(r.shares)}</td>
             <td class="n val" data-v="${r.value ?? -1}">${r.value != null ? money(r.value) : ""}</td>
           </tr>${detail}`;
         })
@@ -292,18 +289,11 @@ export function renderPage(rows, f, report, boards) {
       </section>`
     : "";
 
-  return `<!DOCTYPE html>
-<html lang="zh-CN"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>A股董监高增持追踪</title>
-${THEME_BOOT}
-<style>${PAGE_CSS}</style></head><body><div class="wrap">
-<header>
-  <div class="logo"><span class="dot"></span>A股增持追踪</div>
+  const body = `
+<div class="page-head">
+  <h1>A股 Insider</h1>
   <span class="tag">董监高二级市场增持 · 数据来源东方财富</span>
-  ${marketSwitch("cn")}
-  <button class="theme-btn" id="themeBtn" type="button" aria-label="切换深浅色主题" title="切换主题">🌗</button>
-</header>
+</div>
 
 ${reportCard}
 
@@ -317,7 +307,7 @@ ${renderBoards(boards, FMT, LABELS)}
 </section>
 
 
-<form class="card" method="get" action="/cn">
+<form class="card filters" method="get" action="/cn">
   <label>代码 / 名称<input name="ticker" value="${esc(f.ticker || "")}" placeholder="600826 或 兰生" size="12"></label>
   <label>增持人<input name="insider" value="${esc(f.insider || "")}" placeholder="姓名" size="10"></label>
   <label>最小金额<input name="min_value" value="${f.minValue ?? ""}" placeholder="1000000 (100万)" size="12"></label>
@@ -344,7 +334,7 @@ ${renderBoards(boards, FMT, LABELS)}
 <div class="card tablecard"><table><thead><tr>
 <th data-type="text">最近变动</th><th data-type="num">代码 / 市值</th><th data-type="text">公司</th>
 <th class="n" data-type="num">增持人数</th><th class="n" data-type="num">笔数</th><th data-type="num">AI</th>
-<th class="n" data-type="num">均价</th><th class="n" data-type="num">总股数</th><th class="n" data-type="num">增持总额</th>
+<th class="n" data-type="num">均价</th><th class="n qty" data-type="num">总股数</th><th class="n" data-type="num">增持总额</th>
 </tr></thead><tbody>${bodyRows}</tbody></table></div>
 
 <footer class="card disclaimer">
@@ -352,7 +342,6 @@ ${renderBoards(boards, FMT, LABELS)}
   <p>本页数据来自公开的 A 股上市公司<strong>董监高持股变动</strong>披露（经东方财富数据接口聚合），仅供信息参考。此类披露是依法定要求公开的信息，不属于任何内幕信息。</p>
   <p>本站所有内容——包括 AI 生成的评分、评级与点评——均不构成投资建议、推荐或任何证券的买卖要约，也不代表本站观点。市值等数据为估算值，可能存在延迟或误差，本站不对其准确性、完整性或及时性作任何保证。</p>
   <p>投资有风险，决策请自行研究并独立判断。本站与中国证监会、交易所及任何券商均无关联，不对因使用本站信息而产生的任何损失承担责任。</p>
-</footer>
-${PAGE_SCRIPT}
-</div></body></html>`;
+</footer>`;
+  return renderShell({ active: "cn", title: "A股 Insider", market: "cn", body });
 }

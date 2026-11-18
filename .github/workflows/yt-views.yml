@@ -1,4 +1,4 @@
-name: YouTuber views → D1
+name: YouTuber views + macro report → D1
 
 on:
   schedule:
@@ -32,11 +32,13 @@ jobs:
       - name: Ensure D1 schema
         run: npx --yes wrangler@3 d1 execute insider --remote --file=schema.sql
 
-      # Start from D1 so videos already analyzed aren't paid for twice.
-      - name: Pull current videos from D1
+      # Start from D1 so videos already analyzed (and reports already written)
+      # aren't paid for twice.
+      - name: Pull current videos and macro reports from D1
         run: |
           npx --yes wrangler@3 d1 export insider --remote --no-schema --table=yt_videos --output=dump.sql
-          python -m scraper.load_dump schema.sql dump.sql
+          npx --yes wrangler@3 d1 export insider --remote --no-schema --table=yt_macro_reports --output=macro_dump.sql || : > macro_dump.sql
+          python -m scraper.load_dump schema.sql dump.sql macro_dump.sql
 
       - name: Fetch and analyze new videos
         env:
@@ -52,6 +54,21 @@ jobs:
         run: |
           python -m scraper.export_d1 --table yt_videos > yt_videos.sql
           [ -s yt_videos.sql ] && npx --yes wrangler@3 d1 execute insider --remote --file=yt_videos.sql || echo "no videos to push"
+
+      # One text-only Gemini call per recent day whose report is missing or was
+      # built from fewer videos than are analyzed now.
+      - name: Build daily macro reports
+        if: ${{ !cancelled() }}
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+        run: python -m scraper.yt_macro
+
+      - name: Push macro reports to D1
+        if: ${{ !cancelled() }}
+        run: |
+          python -m scraper.export_d1 --table yt_macro_reports > yt_macro_reports.sql
+          [ -s yt_macro_reports.sql ] && npx --yes wrangler@3 d1 execute insider --remote --file=yt_macro_reports.sql || echo "no reports to push"
 
       - name: Prune videos older than 30 days
         run: npx --yes wrangler@3 d1 execute insider --remote --command "DELETE FROM yt_videos WHERE publish_date < date('now', '-30 days')"

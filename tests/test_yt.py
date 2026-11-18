@@ -136,9 +136,9 @@ def test_clean_result_coerces_bad_stances_and_drops_nameless_stocks():
             "stocks": [
                 {
                     "ticker": "nvda", "name": "英伟达", "category": "芯片龙头",
-                    "stance": "看多", "price_note": " 199加仓 ", "reason": "r",
+                    "stance": "看多", "price_note": " 199加仓 ", "reason": "r", "score": 132,
                 },
-                {"ticker": "tsla", "name": "", "stance": "???", "reason": ""},
+                {"ticker": "tsla", "name": "", "stance": "???", "reason": "", "score": "x"},
                 {"ticker": "", "name": "", "stance": "看多", "reason": "r"},
             ],
         }
@@ -149,6 +149,7 @@ def test_clean_result_coerces_bad_stances_and_drops_nameless_stocks():
     assert [(s["ticker"], s["stance"]) for s in stocks] == [("NVDA", "看多"), ("TSLA", "中性")]
     assert stocks[0]["price_note"] == "199加仓"
     assert stocks[1]["price_note"] == ""
+    assert [s["score"] for s in stocks] == [100, None]
 
 
 def test_store_is_idempotent_and_keeps_existing_analysis(empty_videos):

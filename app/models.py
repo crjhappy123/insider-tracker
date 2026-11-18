@@ -232,6 +232,22 @@ class YtVideo(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class YtMacroReport(Base):
+    """One day's macro report condensed from that day's analyzed videos (/yt/macro)."""
+
+    __tablename__ = "yt_macro_reports"
+
+    report_date: Mapped[str] = mapped_column(String(10), primary_key=True)
+    stance: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
+    headline: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    content: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # JSON object
+    # How many analyzed videos the report was built from; a day is regenerated when
+    # more of its videos have been analyzed since.
+    video_count: Mapped[int] = mapped_column(Integer, default=0)
+    model: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class CnLeaderboard(Base):
     """Durable A-share AI leaderboard; `ticker` holds the 6-digit 股票代码.
 

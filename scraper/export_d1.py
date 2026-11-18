@@ -52,6 +52,10 @@ YT_VIDEO_COLUMNS = [
     "publish_date", "stance", "summary", "views", "stocks", "model", "attempts",
     "created_at",
 ]
+YT_MACRO_COLUMNS = [
+    "report_date", "stance", "headline", "content", "video_count", "model",
+    "created_at",
+]
 
 # table -> (columns, insert verb)
 TABLES = {
@@ -66,6 +70,7 @@ TABLES = {
     "cn_ai_scores": (CN_SCORE_COLUMNS, "INSERT OR REPLACE"),
     "cn_leaderboard": (LEADERBOARD_COLUMNS, "INSERT OR REPLACE"),
     "yt_videos": (YT_VIDEO_COLUMNS, "INSERT OR REPLACE"),
+    "yt_macro_reports": (YT_MACRO_COLUMNS, "INSERT OR REPLACE"),
 }
 # Tables whose rows are date-windowed by `--since`: filter column -> ORDER BY.
 SINCE_COLUMN = {

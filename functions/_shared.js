@@ -1,8 +1,9 @@
-// Presentation layer shared by the US (`/`) and A-share (`/cn`) pages: theme CSS,
-// client-side enhancements, market switcher, and the market-agnostic pieces of
-// the AI leaderboard. Anything currency- or language-specific stays in the
-// per-market module (`_query.js` for US, `_cn.js` for A-shares), which passes in
-// a `fmt` (formatters) and `L` (labels) object.
+// Presentation layer shared by every page: the app shell (top bar + a sidebar with
+// the three sections — 美股 Insider, A股 Insider, 博主汇总), theme CSS, client-side
+// enhancements, and the market-agnostic pieces of the AI leaderboard. Anything
+// currency- or language-specific stays in the per-page module (`_query.js` for US,
+// `_cn.js` for A-shares, `_yt.js` for the YouTuber pages), which passes in a `fmt`
+// (formatters) and `L` (labels) object where needed.
 //
 // Files prefixed with "_" are not routed by Cloudflare Pages.
 
@@ -11,11 +12,40 @@ export const THEME_BOOT =
   `<script>try{var t=localStorage.getItem('theme');` +
   `if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>`;
 
-// Client-side enhancements (no framework): theme toggle, click-to-copy tickers,
-// clickable column sorting, AI-detail disclosure rows, and zebra striping that
-// survives sorting.
+// Client-side enhancements (no framework): market clock, theme toggle, click-to-copy
+// tickers, clickable column sorting, AI-detail disclosure rows, and zebra striping
+// that survives sorting.
 export const PAGE_SCRIPT = `<script>
 (function(){
+  // Market clock in the top bar: the page's market date and session. Weekends show
+  // 休市; exchange holidays aren't known here, so they read as a normal weekday.
+  var clk=document.getElementById('mclock');
+  function tick(){
+    if(!clk)return;
+    var cn=clk.getAttribute('data-market')==='cn', p={};
+    try{
+      new Intl.DateTimeFormat('en-US',{timeZone:cn?'Asia/Shanghai':'America/New_York',
+        weekday:'short',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',hourCycle:'h23'})
+        .formatToParts(new Date()).forEach(function(x){p[x.type]=x.value;});
+    }catch(e){return;}
+    var m=(+p.hour%24)*60+(+p.minute), st, open=false;
+    if(p.weekday==='Sat'||p.weekday==='Sun')st='休市';
+    else if(cn){
+      if(m>=555&&m<570)st='集合竞价';
+      else if((m>=570&&m<690)||(m>=780&&m<900)){st='交易中';open=true;}
+      else if(m>=690&&m<780)st='午间休市';
+      else st='已收盘';
+    }else{
+      if(m>=240&&m<570)st='盘前';
+      else if(m>=570&&m<960){st='交易中';open=true;}
+      else if(m>=960&&m<1200)st='盘后';
+      else st='已收盘';
+    }
+    clk.lastElementChild.textContent=(cn?'北京 ':'美东 ')+p.month+'/'+p.day+' · '+st;
+    clk.classList.toggle('open',open);
+  }
+  tick(); setInterval(tick,30000);
+
   // Theme toggle (persisted; initial theme applied by the inline <head> script).
   var btn=document.getElementById('themeBtn');
   if(btn)btn.addEventListener('click',function(){
@@ -109,106 +139,130 @@ export const PAGE_SCRIPT = `<script>
 })();
 </script>`;
 
-// The full stylesheet, shared verbatim by both pages so they read as one site.
-// Market-cap *tier thresholds* differ per market (see each module's mcapTier),
-// but the tier class names — and therefore these styles — are the same.
+// Theme tokens. Light is the default (it follows the OS), dark via the OS or the
+// toggle; both palettes are declared once and applied in all four places.
+const LIGHT = `color-scheme:light;
+  --plane:#f5f6fa; --surface:#fff; --side:#fafbfd; --glass:rgba(15,23,42,.03);
+  --hover:rgba(15,23,42,.045); --thead:#f1f3f8;
+  --ink:#1c1f26; --ink2:#4a4f5a; --muted:#8b909b;
+  --border:#e5e7ee; --zebra:rgba(15,23,42,.022);
+  --buy:#16a34a; --sell:#dc2626; --accent:#3b6cf6; --accent-soft:rgba(59,108,246,.1);
+  --shadow:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.03);`;
+const DARK = `color-scheme:dark;
+  --plane:#0e1014; --surface:#161920; --side:#12151b; --glass:rgba(255,255,255,.035);
+  --hover:rgba(255,255,255,.05); --thead:#1c2029;
+  --ink:#eceef3; --ink2:#b4b9c4; --muted:#7d8390;
+  --border:rgba(255,255,255,.08); --zebra:rgba(255,255,255,.022);
+  --buy:#22c55e; --sell:#ef4444; --accent:#5b8cff; --accent-soft:rgba(91,140,255,.15);
+  --shadow:none;`;
+
+// The full stylesheet, shared by every page so they read as one site. Market-cap
+// *tier thresholds* differ per market (see each module's mcapTier), but the tier
+// class names — and therefore these styles — are the same.
 export const PAGE_CSS = `
-:root{
-  color-scheme:dark;
-  --plane:#0d0d0d; --surface:#1a1a19; --glass:rgba(255,255,255,.04);
-  --ink:#fff; --ink2:#c3c2b7; --muted:#898781;
-  --border:rgba(255,255,255,.10); --zebra:rgba(255,255,255,.028);
-  --buy:#0ca30c; --sell:#d03b3b; --accent:#3987e5;
-}
-@media (prefers-color-scheme:light){
-  :root{
-    color-scheme:light;
-    --plane:#f4f4f1; --surface:#fcfcfb; --glass:rgba(11,11,11,.03);
-    --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
-    --border:rgba(11,11,11,.10); --zebra:rgba(11,11,11,.035);
-    --buy:#0a850a; --sell:#c02525; --accent:#2a78d6;
-  }
-}
+:root{${LIGHT}}
+@media (prefers-color-scheme:dark){:root{${DARK}}}
 /* explicit theme override (toggle button); beats the media query by specificity */
-html[data-theme="dark"]{
-  color-scheme:dark;
-  --plane:#0d0d0d; --surface:#1a1a19; --glass:rgba(255,255,255,.04);
-  --ink:#fff; --ink2:#c3c2b7; --muted:#898781;
-  --border:rgba(255,255,255,.10); --zebra:rgba(255,255,255,.028);
-  --buy:#0ca30c; --sell:#d03b3b; --accent:#3987e5;
-}
-html[data-theme="light"]{
-  color-scheme:light;
-  --plane:#f4f4f1; --surface:#fcfcfb; --glass:rgba(11,11,11,.03);
-  --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
-  --border:rgba(11,11,11,.10); --zebra:rgba(11,11,11,.035);
-  --buy:#0a850a; --sell:#c02525; --accent:#2a78d6;
-}
+html[data-theme="light"]{${LIGHT}}
+html[data-theme="dark"]{${DARK}}
 *{box-sizing:border-box}
-body{
-  margin:0; font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
-  color:var(--ink); background:
-    radial-gradient(1200px 500px at 15% -10%, rgba(57,135,229,.14), transparent 60%),
-    radial-gradient(900px 500px at 100% 0%, rgba(12,163,12,.08), transparent 55%),
-    var(--plane);
-  min-height:100vh; padding:1.5rem clamp(1rem,4vw,2.5rem) 3rem;
+html{-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100vh;line-height:1.45;color:var(--ink);background:var(--plane);
+  font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+/* ---- app shell: top bar + sidebar ---- */
+.topbar{position:sticky;top:0;z-index:30;height:60px;display:flex;align-items:center;gap:1rem;
+  padding:0 clamp(.9rem,2vw,1.5rem);background:var(--surface);border-bottom:1px solid var(--border)}
+.brand{display:flex;align-items:center;gap:.6rem;font-size:1.2rem;font-weight:800;letter-spacing:-.01em;
+  color:var(--ink);text-decoration:none;white-space:nowrap}
+.brand-mark{width:32px;height:32px;flex:none;border-radius:10px;display:grid;place-items:center;color:#fff;
+  background:linear-gradient(135deg,var(--accent),#8b5cf6)}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:.75rem}
+.mclock{display:flex;align-items:center;gap:.45rem;font-size:.8rem;color:var(--muted);white-space:nowrap;
+  font-variant-numeric:tabular-nums}
+.mclock i{width:7px;height:7px;border-radius:50%;background:var(--muted);opacity:.6}
+.mclock.open i{background:var(--buy);opacity:1;box-shadow:0 0 0 3px color-mix(in srgb,var(--buy) 22%,transparent)}
+.theme-btn{width:36px;height:36px;flex:none;display:grid;place-items:center;padding:0;border-radius:50%;
+  background:var(--plane);color:var(--ink2);border:1px solid var(--border);cursor:pointer}
+.theme-btn:hover{color:var(--accent);border-color:var(--accent);filter:none}
+.layout{display:grid;grid-template-columns:212px minmax(0,1fr);min-height:calc(100vh - 60px)}
+.side{position:sticky;top:60px;align-self:start;height:calc(100vh - 60px);overflow-y:auto;
+  padding:1rem .75rem;background:var(--side);border-right:1px solid var(--border)}
+.nav-item{display:flex;align-items:center;gap:.7rem;padding:.62rem .85rem;margin-bottom:.2rem;border-radius:10px;
+  font-size:.92rem;font-weight:500;color:var(--ink2);text-decoration:none;white-space:nowrap}
+.nav-item svg{flex:none}
+.nav-item:hover{background:var(--hover);color:var(--ink)}
+.nav-item.on{background:var(--accent-soft);color:var(--accent);font-weight:700}
+.nav-sub{display:flex;flex-direction:column;gap:.1rem;margin:.1rem 0 .5rem 1.45rem;padding-left:.6rem;
+  border-left:1px solid var(--border)}
+.nav-sub a{padding:.42rem .7rem;border-radius:8px;font-size:.85rem;color:var(--muted);text-decoration:none}
+.nav-sub a:hover{color:var(--ink);background:var(--hover)}
+.nav-sub a.on{color:var(--accent);font-weight:600;background:var(--accent-soft)}
+.subnav{display:none}
+.main{min-width:0;padding:1.25rem clamp(.9rem,2.4vw,1.75rem) 3rem}
+.main>*{max-width:1320px}
+.page-head{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;margin:.1rem 0 1.1rem}
+.page-head h1{margin:0;font-size:1.45rem;font-weight:800;letter-spacing:-.01em}
+.page-head .tag{color:var(--muted);font-size:.82rem}
+@media (max-width:860px){
+  .layout{grid-template-columns:1fr}
+  .side{top:60px;z-index:25;height:auto;display:flex;gap:.3rem;overflow-x:auto;padding:.45rem .7rem;
+    border-right:none;border-bottom:1px solid var(--border);background:var(--surface)}
+  .nav-item{margin:0;padding:.45rem .8rem;font-size:.86rem}
+  .nav-sub{display:none}
+  .subnav{display:flex;gap:.3rem;width:fit-content;max-width:100%;overflow-x:auto;margin-bottom:1rem;
+    padding:.25rem;background:var(--surface);border:1px solid var(--border);border-radius:12px}
+  .subnav a{padding:.38rem .8rem;border-radius:9px;font-size:.84rem;color:var(--ink2);text-decoration:none;white-space:nowrap}
+  .subnav a.on{background:var(--accent);color:#fff;font-weight:600}
 }
-.wrap{max-width:1280px;margin:0 auto}
-header{display:flex;align-items:baseline;gap:.8rem;flex-wrap:wrap;margin-bottom:1.4rem}
-.logo{display:flex;align-items:center;gap:.55rem;font-size:1.45rem;font-weight:700;letter-spacing:-.02em}
-.dot{width:.7rem;height:.7rem;border-radius:50%;background:var(--accent);
-  box-shadow:0 0 0 4px rgba(57,135,229,.18),0 0 16px 2px var(--accent)}
+@media (max-width:520px){
+  .topbar{gap:.5rem}
+  .brand{font-size:1.05rem}
+  .mclock{font-size:.72rem}
+  .side{scrollbar-width:none;justify-content:space-between}
+  .nav-item svg{display:none}
+}
+/* ---- components ---- */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow)}
 .tag{color:var(--muted);font-size:.82rem}
-/* market switcher (US ⇄ A-shares): segmented control, current market active */
-.mkt{display:flex;gap:.25rem;margin-left:auto;padding:.2rem;background:var(--surface);
-  border:1px solid var(--border);border-radius:12px;align-self:center}
-.mkt-tab{font-size:.78rem;font-weight:600;color:var(--ink2);text-decoration:none;
-  padding:.32rem .7rem;border-radius:9px;white-space:nowrap;line-height:1.3}
-.mkt-tab:hover{color:var(--ink)}
-.mkt-tab.on{color:#fff;background:var(--accent)}
-.theme-btn{margin-left:.4rem;align-self:center;background:var(--surface);color:var(--ink2);
-  border:1px solid var(--border);border-radius:10px;padding:.4rem .6rem;font-size:1rem;
-  line-height:1;cursor:pointer}
-.theme-btn:hover{color:var(--ink);border-color:var(--accent)}
-.card{background:var(--glass);border:1px solid var(--border);border-radius:16px;
-  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
 /* KPI tiles */
 .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.9rem;margin-bottom:1.1rem}
-.tile{padding:1rem 1.15rem}
-.tile-label{font-size:.68rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:.35rem}
-.tile-value{font-size:1.7rem;font-weight:700;letter-spacing:-.02em;line-height:1}
-.tile-sub{font-size:.72rem;color:var(--ink2);margin-top:.4rem}
+.kpi .tile{padding:1rem 1.15rem;background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  box-shadow:var(--shadow)}
+.tile-label{font-size:.72rem;letter-spacing:.04em;color:var(--muted);margin-bottom:.4rem;font-weight:600}
+.tile-value{font-size:1.65rem;font-weight:800;letter-spacing:-.02em;line-height:1}
+.tile-sub{font-size:.74rem;color:var(--ink2);margin-top:.45rem}
 /* filters */
-form{display:flex;flex-wrap:wrap;gap:.7rem;align-items:end;padding:1rem 1.15rem;margin-bottom:1.1rem}
-label{display:flex;flex-direction:column;font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);gap:.35rem}
-label.check{flex-direction:row;align-items:center;gap:.4rem;text-transform:none;font-size:.8rem;color:var(--ink2);padding-bottom:.35rem}
-label.check input{width:auto}
-input,select{padding:.5rem .65rem;font-size:.9rem;color:var(--ink);background:var(--surface);
+form.filters{display:flex;flex-wrap:wrap;gap:.7rem;align-items:end;padding:1rem 1.15rem;margin-bottom:1.1rem}
+.filters label{display:flex;flex-direction:column;font-size:.72rem;font-weight:600;color:var(--muted);gap:.35rem}
+input,select{padding:.5rem .7rem;font-size:.9rem;color:var(--ink);background:var(--surface);
   border:1px solid var(--border);border-radius:10px;font-family:inherit}
-input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(57,135,229,.25)}
+input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 button{padding:.55rem 1.1rem;font-size:.9rem;font-weight:600;cursor:pointer;color:#fff;
-  background:var(--accent);border:none;border-radius:10px}
+  background:var(--accent);border:none;border-radius:10px;font-family:inherit}
 button:hover{filter:brightness(1.08)}
-.reset{align-self:center;font-size:.78rem;color:var(--muted);text-decoration:none}
+.reset{align-self:center;font-size:.8rem;color:var(--muted);text-decoration:none}
 .reset:hover{color:var(--ink)}
 /* table */
 .tablecard{overflow-x:auto}
-table{border-collapse:collapse;width:100%;font-size:.82rem}
-th,td{padding:.55rem .7rem;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border)}
-thead th{position:sticky;top:0;background:var(--surface);z-index:1;color:var(--muted);
-  font-size:.68rem;letter-spacing:.07em;text-transform:uppercase;font-weight:600}
+table{border-collapse:collapse;width:100%;font-size:.84rem}
+th,td{padding:.6rem .7rem;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border)}
+thead th{position:sticky;top:0;background:var(--thead);z-index:1;color:var(--ink2);
+  font-size:.8rem;font-weight:700}
 thead th[data-type]{cursor:pointer;user-select:none}
 thead th[data-type]:hover{color:var(--ink)}
-thead th[data-type]::after{content:"↕";margin-left:.3rem;opacity:.35;font-size:.62rem}
+thead th[data-type]::after{content:"⇅";margin-left:.3rem;opacity:.45;font-size:.72rem}
 thead th[data-dir=asc]::after{content:"▲";opacity:.9}
 thead th[data-dir=desc]::after{content:"▼";opacity:.9}
-tbody tr{transition:filter .12s}
-tbody tr:hover{filter:brightness(1.22)}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover{background:var(--hover)}
 /* zebra striping (JS-tagged so it survives sorting & detail rows) */
 tbody tr.alt td{background-image:linear-gradient(var(--zebra),var(--zebra))}
 td.n{text-align:right;font-variant-numeric:tabular-nums}
 td.dim{color:var(--muted)}
-td.co{max-width:220px;overflow:hidden;text-overflow:ellipsis}
+td.co{max-width:200px;overflow:hidden;text-overflow:ellipsis}
+/* With the sidebar, a 1280px laptop has ~1000px for the 9-column insider tables:
+   share count is the column that can go. */
+@media (max-width:1360px){th.qty,td.qty{display:none}}
 td.val{font-weight:600}
 td.tk{line-height:1.2}
 /* Tickers are click-to-copy. width:fit-content so the hover underline hugs the
@@ -307,13 +361,88 @@ tbody tr.mc-mid   .mcap{color:var(--mc-mid)}
 .disclaimer p:last-child{margin:0}
 `;
 
-// Header market switcher. `current` is "us", "cn" or "yt"; the active tab is inert.
-export function marketSwitch(current) {
-  const tab = (href, label, key) =>
-    `<a class="mkt-tab${current === key ? " on" : ""}" href="${href}">${label}</a>`;
-  return `<nav class="mkt" aria-label="Market">
-    ${tab("/", "🇺🇸 US", "us")}${tab("/cn", "🇨🇳 A股", "cn")}${tab("/yt", "📺 博主", "yt")}
-  </nav>`;
+// Stroke icons (Feather-style), drawn in currentColor.
+const ICONS = {
+  us: '<path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>',
+  cn: '<path d="M3 3v18h18"/><path d="M8 16v-5"/><path d="M13 16V7"/><path d="M18 16v-3"/>',
+  yt:
+    '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>' +
+    '<path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
+};
+
+function icon(name, size = 18, width = 1.8) {
+  return (
+    `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" ` +
+    `stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
+    `${ICONS[name]}</svg>`
+  );
+}
+
+// The site's three sections. 博主汇总 has sub-pages, listed under it in the sidebar
+// (and as a segmented control on narrow screens, where the sidebar is a tab strip).
+const YT_PAGES = [
+  { key: "yt", href: "/yt", label: "个股观点" },
+  { key: "yt-macro", href: "/yt/macro", label: "宏观报告" },
+  { key: "yt-heat", href: "/yt/heatmap", label: "热力图" },
+];
+const NAV = [
+  { key: "us", href: "/", label: "美股 Insider", icon: "us" },
+  { key: "cn", href: "/cn", label: "A股 Insider", icon: "cn" },
+  { key: "yt", href: "/yt", label: "博主汇总", icon: "yt", sub: YT_PAGES },
+];
+
+const FAVICON =
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' +
+      '<rect width="32" height="32" rx="8" fill="#3b6cf6"/>' +
+      '<path d="M7 21l6-6 4 4 8-8" fill="none" stroke="#fff" stroke-width="3" ' +
+      'stroke-linecap="round" stroke-linejoin="round"/></svg>'
+  );
+
+// A full page: top bar (brand, market clock, theme toggle), sidebar, and `body` in
+// the main column. `active` is a NAV key or a YT_PAGES key; `market` picks the
+// clock's exchange ("us" or "cn").
+export function renderShell({ active, title, body, css = "", lang = "zh-CN", market = "us" }) {
+  const group = active.split("-")[0];
+  const subLinks = (cls) =>
+    YT_PAGES.map(
+      (p) =>
+        `<a href="${p.href}"${p.key === active ? ` class="${cls}" aria-current="page"` : ""}>${p.label}</a>`
+    ).join("");
+  const nav = NAV.map((n) => {
+    const on = n.key === group;
+    const current = on && !n.sub ? ' aria-current="page"' : "";
+    const sub = n.sub ? `<div class="nav-sub">${subLinks("on")}</div>` : "";
+    return (
+      `<a class="nav-item${on ? " on" : ""}" href="${n.href}"${current}>` +
+      `${icon(n.icon)}<span>${n.label}</span></a>${sub}`
+    );
+  }).join("");
+  const subnav = group === "yt" ? `<nav class="subnav" aria-label="博主汇总">${subLinks("on")}</nav>` : "";
+  return `<!DOCTYPE html>
+<html lang="${lang}"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(title)} · RudyStock</title>
+<link rel="icon" href="${FAVICON}">
+${THEME_BOOT}
+<style>${PAGE_CSS}${css}</style></head><body>
+<header class="topbar">
+  <a class="brand" href="/"><span class="brand-mark">${icon("us", 18, 2.4)}</span>RudyStock</a>
+  <div class="top-right">
+    <span class="mclock" id="mclock" data-market="${market === "cn" ? "cn" : "us"}"><i></i><span>${
+      market === "cn" ? "北京" : "美东"
+    }</span></span>
+    <button class="theme-btn" id="themeBtn" type="button" aria-label="切换深浅色" title="切换深浅色">${icon("moon")}</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="side" aria-label="板块">${nav}</nav>
+  <main class="main">${subnav}${body}</main>
+</div>
+${PAGE_SCRIPT}
+</body></html>`;
 }
 
 export function esc(s) {

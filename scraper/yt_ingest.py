@@ -2,7 +2,7 @@
 
 Lists each channel in ``yt_channels.json``, stores videos published in the last
 YT_LOOKBACK_DAYS, and asks Gemini to watch each new one and extract its market view
-and stock calls. Gemini reads the public YouTube URL directly, so there is no
+and stock calls (each with a 0-100 score for how bullish the creator is on it). Gemini reads the public YouTube URL directly, so there is no
 transcript scraping (which YouTube blocks from datacenter IPs).
 
 Listing uses the YouTube Data API when YOUTUBE_API_KEY is set. Without it we fall
@@ -68,8 +68,11 @@ _RESPONSE_SCHEMA = {
                     "stance": {"type": "STRING"},
                     "price_note": {"type": "STRING"},
                     "reason": {"type": "STRING"},
+                    "score": {"type": "INTEGER"},
                 },
-                "required": ["ticker", "name", "category", "stance", "price_note", "reason"],
+                "required": [
+                    "ticker", "name", "category", "stance", "price_note", "reason", "score",
+                ],
             },
         },
     },
@@ -90,6 +93,9 @@ _INSTRUCTIONS = (
     "`stance` 必须是 看多 / 看空 / 中性 之一，`reason` 用一句话写博主的核心理由。"
     "`price_note` 写博主实际说出的价位（如 现价204、199加仓、目标600、挂单315），"
     "没有说价位就留空，绝不要自己估算。"
+    "`score` 是 0-100 的整数，表示博主对这只股票的看好程度：85 以上是强烈看多或重点推荐，"
+    "60-84 看多，41-59 中性观望，16-40 看空，15 以下强烈看空。只按博主的表态和语气打分，"
+    "并与 `stance` 保持一致。"
     "只是顺带提到、没有表态的不要列。没有就返回空数组。"
 )
 
@@ -223,24 +229,11 @@ class QuotaExhausted(Exception):
     """Every model returned 429, so later videos would fail the same way."""
 
 
-def _call_gemini(video: YtVideo) -> tuple[dict, str]:
-    body = {
-        "contents": [
-            {
-                "parts": [
-                    {"fileData": {"fileUri": f"https://www.youtube.com/watch?v={video.video_id}"}},
-                    {"text": _INSTRUCTIONS.format(channel=video.channel_name, title=video.title)},
-                ]
-            }
-        ],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            "responseSchema": _RESPONSE_SCHEMA,
-            "temperature": 0.2,
-            # Talking-head videos: the speech carries the content, not the pixels.
-            "mediaResolution": "MEDIA_RESOLUTION_LOW",
-        },
-    }
+def generate_json(body: dict, timeout: int = 600) -> tuple[dict, str]:
+    """POST a generateContent body, falling back across models; returns (parsed JSON, model).
+
+    Raises QuotaExhausted when every model is rate-limited, so callers can stop early.
+    """
     models = list(dict.fromkeys([MODEL] + FALLBACK_MODELS))
     last_status = None
     for model in models:
@@ -250,7 +243,7 @@ def _call_gemini(video: YtVideo) -> tuple[dict, str]:
                     ENDPOINT.format(model=model),
                     params={"key": GEMINI_API_KEY},
                     json=body,
-                    timeout=600,
+                    timeout=timeout,
                 )
             except (requests.Timeout, requests.ConnectionError):
                 last_status = None
@@ -269,6 +262,35 @@ def _call_gemini(video: YtVideo) -> tuple[dict, str]:
     raise requests.RequestException(f"all models failed, last status {last_status}")
 
 
+def _call_gemini(video: YtVideo) -> tuple[dict, str]:
+    body = {
+        "contents": [
+            {
+                "parts": [
+                    {"fileData": {"fileUri": f"https://www.youtube.com/watch?v={video.video_id}"}},
+                    {"text": _INSTRUCTIONS.format(channel=video.channel_name, title=video.title)},
+                ]
+            }
+        ],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "responseSchema": _RESPONSE_SCHEMA,
+            "temperature": 0.2,
+            # Talking-head videos: the speech carries the content, not the pixels.
+            "mediaResolution": "MEDIA_RESOLUTION_LOW",
+        },
+    }
+    return generate_json(body)
+
+
+def _score(value) -> int | None:
+    """A 0-100 integer, or None when the model returned something unusable."""
+    try:
+        return max(0, min(100, round(float(value))))
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
 def clean_result(result: dict) -> dict:
     """Coerce model output to what the page expects; unknown stances become 中性."""
     stocks = [
@@ -279,6 +301,7 @@ def clean_result(result: dict) -> dict:
             "stance": s.get("stance") if s.get("stance") in STANCES else "中性",
             "price_note": (s.get("price_note") or "").strip(),
             "reason": (s.get("reason") or "").strip(),
+            "score": _score(s.get("score")),
         }
         for s in result.get("stocks") or []
         if s.get("ticker") or s.get("name")
